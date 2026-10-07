@@ -1,0 +1,96 @@
+# Architecture
+
+Three modules. The game logic is a pure state transition function; everything else is a thin shell around it.
+
+```
+index.html
+src/core/      types.ts, level.ts, step.ts, rules.ts    pure, no DOM, no I/O
+src/host/      index.ts, level-data.ts                  history stack, keybindings, dispatch
+src/render/    canvas.ts                                (state) => draw
+```
+
+TypeScript, built with Vite. `npm run dev` to play, `npm run typecheck` to check.
+
+## `core/` — pure, no DOM, no I/O
+
+| File | Exports |
+| --- | --- |
+| `types.ts` | `Dir`, `Action`, `Level`, `State` |
+| `level.ts` | `parse(xsb: string)` → `Level` plus the initial `State` |
+| `step.ts` | `step(state: State, action: Action): State` — returns the same state for illegal moves |
+| `rules.ts` | `isSolved(state)`, `neighbour(level, i, dir)`, `toXY` / `toIdx` helpers |
+
+### State shape
+
+```ts
+type Level = { width: number; height: number; walls: boolean[]; goals: ReadonlySet<number> }
+type State = { level: Level; player: number; boxes: ReadonlySet<number> }
+type Action = { type: 'move'; dir: Dir }
+```
+
+`Action` has only one case. Reset was dropped from it for the same reason undo is not in it: resetting means returning to the first entry of the history stack, which is the host's business and would otherwise force the engine to carry the initial state around.
+
+Static data (`Level`) is separated from dynamic data (`State`). The level never changes, so snapshots for undo only copy the player position and the box set.
+
+### Positions are flat indices
+
+Positions are row-major indices into the flattened grid, not `{x, y}` objects.
+
+```ts
+const idx = y * width + x
+const x = idx % width
+const y = Math.floor(idx / width)
+```
+
+Why: JavaScript `Set` and `Map` compare objects by reference, so `set.has({x, y})` is always false. Numbers are compared by value, so `Set<number>` membership works and is O(1). It also makes `walls` a direct array lookup, and it makes states cheap to hash and compare, which matters if deadlock detection or a solver is added later.
+
+The gotcha: moving `left` from `x === 0` wraps to the end of the previous row instead of going out of bounds. Guarded in one place — `neighbour()` in `rules.ts` converts to x/y, adds the delta, bounds-checks, and converts back, returning -1 when the step leaves the grid. Nothing else in the codebase does index arithmetic on positions.
+
+### Walls come from a flood fill, not a border
+
+Real level text is ragged: short lines, leading spaces that are outside the puzzle, and wall segments with empty space behind them. Rather than requiring or synthesising an outer border, `parse()` flood-fills from the player across non-wall characters and marks everything it cannot reach as a wall.
+
+That makes the playfield self-enclosing by construction, collapses the "outside the level" and "wall" cases into one flag, and catches malformed levels — a box or goal sealed off from the player is a parse error rather than an unwinnable game.
+
+### Level format
+
+Levels are parsed from standard XSB text, so existing level sets work without conversion.
+
+| Char | Meaning |
+| --- | --- |
+| `#` | wall |
+| `$` | box |
+| `.` | goal |
+| `@` | player |
+| `*` | box on goal |
+| `+` | player on goal |
+| space | floor |
+
+## `host/` — the only mutable thing in the system
+
+Owns a `State[]` history stack — the only mutable value in the program. Maps keys to a command, calls `step`, pushes the result, and handles undo by popping and reset by truncating to the first entry. Calls the renderer after each change. No game rules live here.
+
+Undo is deliberately outside engine state. Because `step` is pure, keeping a stack of previous states gives undo, redo, and replay for free, and the engine stays simple.
+
+Illegal moves are detected by identity: `step` returns the same object when nothing changed, so `next === current()` means the move was rejected and no history entry is recorded.
+
+Keys: arrows or WASD to move, Z or U to undo, R to reset.
+
+## `render/` — dumb
+
+`createRenderer(canvas)` returns a `render(state): void` that redraws the whole board. Reads `state.level` for walls and goals, and `state.player` and `state.boxes` for the movable pieces. No event listeners, no game logic, no knowledge of history.
+
+Full redraw every time is deliberate: it keeps the renderer a pure function of state with nothing to invalidate, and a Sokoban board is small enough that the cost is irrelevant.
+
+## Boundaries that matter
+
+- Rules live only in `core/`. `step` is the single place state changes.
+- Input mapping lives only in `host/`. `core/` never sees a keycode — it takes domain actions.
+- Undo lives only in `host/`, outside engine state.
+- `core/` imports nothing from `host/` or `render/`, so it runs unchanged in Node tests, a terminal front end, or a solver.
+
+## Deferred decisions
+
+- `step` returns only the new state, not `{ state, events }`. Animation and sound will need either a diff of consecutive states or an event channel; that choice is postponed until one of them is actually built.
+- The level is a hardcoded string in `host/level-data.ts`, to avoid an async loading path before there is anything to look at. When real level sets arrive they go in `levels/*.sok` as plain text, the host fetches them, and `core/level.ts` gains a pure `parseCollection(text)` to split a multi-level file and strip its `Title:` / `Author:` metadata. `parse()` itself does not change.
+- Redo is not wired up. The history stack already supports it; it needs a forward stack and a key.

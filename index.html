@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sokoban</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 16px;
+        box-sizing: border-box;
+        background: #11131a;
+        color: #c3c9d8;
+        font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      #board {
+        flex: 1 1 auto;
+        width: 100%;
+        max-width: 900px;
+        min-height: 0;
+      }
+      #status {
+        flex: 0 0 auto;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="board"></canvas>
+    <p id="status"></p>
+    <script type="module" src="/src/host/index.ts"></script>
+  </body>
+</html>
