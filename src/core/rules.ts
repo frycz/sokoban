@@ -75,18 +75,19 @@ export function isPositionFree(
   )
 }
 
-const POSITION_STEPS: Record<PlayerMoveDirection, readonly [number, number]> = {
-  up: [0, -1],
-  down: [0, 1],
-  left: [-1, 0],
-  right: [1, 0],
-}
-
 export function getNextPosition(
   level: Level,
   currentPosition: number,
   playerMoveDirection: PlayerMoveDirection,
 ): number {
+  const POSITION_STEPS: Record<PlayerMoveDirection, readonly [number, number]> =
+    {
+      up: [0, -1],
+      down: [0, 1],
+      left: [-1, 0],
+      right: [1, 0],
+    }
+
   const [positionStepX, positionStepY] = POSITION_STEPS[playerMoveDirection]
   const nextPositionX = getPositionX(level, currentPosition) + positionStepX
   const nextPositionY = getPositionY(level, currentPosition) + positionStepY
