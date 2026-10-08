@@ -20,6 +20,11 @@ export function isPositionWall(level: Level, position: number): boolean {
   return level.wallMap[position]
 }
 
+/** True if a box currently sits on `position`. */
+export function isPositionBox(levelState: LevelState, position: number): boolean {
+  return levelState.boxPositions.has(position)
+}
+
 /**
  * True if `position` is a cell a piece can occupy: on the map, and not a wall.
  * The order of the two checks matters, because `isPositionWall` does a raw
