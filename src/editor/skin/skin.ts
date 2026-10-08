@@ -1,4 +1,8 @@
-import { ROLE_ORDER, type TileRole } from '../../render/tile-roles'
+import {
+  REQUIRED_ROLES,
+  ROLE_ORDER,
+  type TileRole,
+} from '../../render/tile-roles'
 import {
   DEFAULT_SHEET_SETTINGS,
   EXPORT_MARGIN,
@@ -21,14 +25,14 @@ export type SkinDraft = {
   readonly bindings: Readonly<Record<TileRole, number>>
 }
 
-const EMPTY_BINDINGS: Record<TileRole, number> = {
-  floor: UNBOUND,
-  goal: UNBOUND,
-  wall: UNBOUND,
-  box: UNBOUND,
-  boxOnGoal: UNBOUND,
-  player: UNBOUND,
-}
+/**
+ * Built from `ROLE_ORDER` rather than written out, so a role added there cannot
+ * be missing here. The cast is what that costs; the alternative is a literal
+ * that silently drifts.
+ */
+const EMPTY_BINDINGS = Object.fromEntries(
+  ROLE_ORDER.map((role) => [role, UNBOUND]),
+) as Record<TileRole, number>
 
 export function createEmptySkinDraft(): SkinDraft {
   return {
@@ -52,6 +56,10 @@ export function bindRole(
   return { ...draft, bindings: { ...draft.bindings, [role]: tileIndex } }
 }
 
+export function unbindRole(draft: SkinDraft, role: TileRole): SkinDraft {
+  return bindRole(draft, role, UNBOUND)
+}
+
 export function setSheetSettings(
   draft: SkinDraft,
   sheet: SheetSettings,
@@ -68,19 +76,30 @@ export function clearBindings(draft: SkinDraft): SkinDraft {
   return { ...draft, bindings: EMPTY_BINDINGS }
 }
 
-export function getUnboundRoles(draft: SkinDraft): TileRole[] {
-  return ROLE_ORDER.filter((role) => draft.bindings[role] === UNBOUND)
+export function isRoleBound(draft: SkinDraft, role: TileRole): boolean {
+  return draft.bindings[role] !== UNBOUND
+}
+
+/** Everything bound, in atlas column order — which is what gets packed. */
+export function getBoundRoles(draft: SkinDraft): TileRole[] {
+  return ROLE_ORDER.filter((role) => isRoleBound(draft, role))
+}
+
+/** Only the required six gate an export; the wall pieces are refinements. */
+export function getMissingRequiredRoles(draft: SkinDraft): TileRole[] {
+  return REQUIRED_ROLES.filter((role) => !isRoleBound(draft, role))
 }
 
 export function isSkinComplete(draft: SkinDraft): boolean {
-  return getUnboundRoles(draft).length === 0
+  return getMissingRequiredRoles(draft).length === 0
 }
 
 /**
  * The manifest describes the exported atlas, not the sheet it was cut from — so
  * `margin` and `spacing` are the extrusion, and `roles` is the atlas layout in
- * column order. The role list is data rather than a convention in a comment,
- * which is what lets the set grow without a version field.
+ * column order, listing exactly the roles the image contains. The role list
+ * being data rather than a convention in a comment is what lets a six-tile skin
+ * and a fourteen-tile skin use one format with no version field.
  */
 export function formatSkinManifest(draft: SkinDraft): string {
   const { tileWidth, tileHeight } = clampSheetSettings(draft.sheet)
@@ -93,7 +112,7 @@ export function formatSkinManifest(draft: SkinDraft): string {
       margin: EXPORT_MARGIN,
       spacing: EXPORT_SPACING,
       pixelated: draft.isPixelated,
-      roles: [...ROLE_ORDER],
+      roles: getBoundRoles(draft),
     },
     null,
     2,

@@ -165,12 +165,35 @@
         flex-direction: column;
         gap: 4px;
       }
-      #role-list button {
+      #role-list .role-row {
+        display: flex;
+        gap: 4px;
+      }
+      #role-list .role-row > button[data-role] {
         display: flex;
         align-items: center;
         gap: 8px;
         text-align: left;
-        width: 100%;
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      #role-list .clear {
+        flex: 0 0 auto;
+        padding: 5px 8px;
+        color: #7d8699;
+      }
+      #role-list .clear:hover {
+        color: #e07a7a;
+      }
+      #role-list .role-heading {
+        margin: 8px 0 2px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #7d8699;
+      }
+      #role-list .role-heading:first-child {
+        margin-top: 0;
       }
       #role-list .tile {
         width: 24px;

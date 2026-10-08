@@ -207,11 +207,36 @@ Per-cell decoration is a different feature: it is level data, not skin data, and
 
 Because a level need not contain every role — there is nothing to click if it has no goals — the role list in the sidebar is a second drop target for the same action. The palette selection is the brush; the preview and the role list are both places to apply it.
 
-### Six roles, one tile each
+### Fourteen roles: six required, eight optional
 
-`ROLE_ORDER` in `render/tile-roles.ts` is the single source of truth: `TileRole` is derived from it, so a role cannot exist without a column in the atlas. Wall autotiling was cut — a 4-bit neighbour mask means 16 wall tiles for no mechanism — which leaves one tile per role and no mask arithmetic anywhere.
+`ROLE_ORDER` in `render/tile-roles.ts` is the single source of truth: `TileRole` is derived from it, so a role cannot exist without a column in the atlas, and `EMPTY_BINDINGS` is built from it so a new role cannot be missing from a draft.
+
+The six in `REQUIRED_ROLES` gate an export. The eight in `WALL_VARIANT_ROLES` — four sides, four corners — are optional refinements, and `getBaseRole` sends any unbound one to `wall`. That is what keeps a six-tile skin rendering every wall, and what lets the editor offer both a quick flat skin and a fully pieced one without a second format.
 
 `boxOnGoal` earns its own tile because it is the only "this one is done" signal on the board. `playerOnGoal` does not exist: goal is drawn on the ground layer and the player composites over it.
+
+### Wall pieces are named for the frame, not the exposed face
+
+A piece is named for where it sits in the wall **around** the floor. Floor to the south means the cell caps the wall above that floor, so it takes `wallTop` — not `wallBottom`. Getting this backwards renders every room inside out, with each wall's cap facing away from the player.
+
+### Wall classification needs all eight neighbours
+
+Four will not do, and the reason is the shape the pieces exist for:
+
+```
+#####     The corners of a one-cell-thick border have no
+#   #     orthogonally adjacent floor — only diagonal. Four
+#   #     neighbours cannot tell a corner from a buried block.
+#####
+```
+
+So `getWallRole` takes a `WallNeighbourhood` of eight booleans and resolves in that order of specificity: one open side is an edge, no open side but an open diagonal is a corner, nothing open at all is the fill.
+
+Two or more open sides is a thin wall or an inner corner, and nine pieces have no tile for either; those degrade to the first edge in priority order, which prefers the top. `tile-roles.test.ts` asserts a wall role comes back for all 256 neighbourhoods, so no level can produce an undrawable cell. Resolving the degraded cases properly needs the 47-piece blob set, which is a much larger art burden for a case Sokoban walls rarely show.
+
+`wall` is in practice the fallback rather than a tile that gets drawn: a cell with nothing open anywhere is culled before classification, exactly as in the game. It stays required because every unbound piece falls back to it.
+
+The classifier lives in `render/` rather than the editor so the preview and the game cannot disagree about which piece a wall gets; `editor/skin/roles.ts` only reads the neighbourhood off a document, treating off-grid as wall so a document's outer edge is not an exposed face.
 
 ### Layer order, and what it asks of the art
 
@@ -249,7 +274,7 @@ Re-slicing drops every binding. A tile index only means something against one gr
 }
 ```
 
-One row, `roles[n]` in column `n`. Naming the roles in the file is what lets the set grow — wall variants, ice, conveyors — by appending to `ROLE_ORDER` and widening the image, with no version field and no breakage for skins already exported, because every skin describes itself.
+One row, `roles[n]` in column `n`, listing exactly the roles the image contains — an unbound role takes no column. Naming them in the file is what lets a six-tile skin and a fourteen-tile skin share one format with no version field, and what lets the set grow — more wall pieces, ice, conveyors — by appending to `ROLE_ORDER` and widening the image, with no breakage for skins already exported, because every skin describes itself.
 
 ### Exported tiles are extruded by a pixel
 

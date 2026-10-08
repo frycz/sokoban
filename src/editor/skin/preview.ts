@@ -1,18 +1,29 @@
 import { COLORS } from '../../render/colors'
-import type { TileRole } from '../../render/tile-roles'
+import { getBaseRole, type TileRole } from '../../render/tile-roles'
 import { getCellX, getCellY, type EditorDocument } from '../document'
 import { computeGridLayout } from '../layout'
+import { getWallRoleAt } from './roles'
 import { getSheetGrid, getSourceTileRect } from './sheet'
-import { UNBOUND, type SkinDraft } from './skin'
+import { isRoleBound, type SkinDraft } from './skin'
 
 /**
  * What an unbound role falls back to, so the preview is always readable and
- * what is still missing shows as a flat block rather than a hole.
+ * what is still missing shows as a flat block rather than a hole. Every wall
+ * piece shares the wall colour, since by then the sprite fallback has already
+ * sent it to the base `wall` role.
  */
 const FALLBACK_COLORS: Record<TileRole, string> = {
   floor: COLORS.floor,
   goal: COLORS.goal,
   wall: COLORS.wall,
+  wallTop: COLORS.wall,
+  wallRight: COLORS.wall,
+  wallBottom: COLORS.wall,
+  wallLeft: COLORS.wall,
+  wallTopLeft: COLORS.wall,
+  wallTopRight: COLORS.wall,
+  wallBottomRight: COLORS.wall,
+  wallBottomLeft: COLORS.wall,
   box: COLORS.box,
   boxOnGoal: COLORS.boxDone,
   player: COLORS.player,
@@ -56,10 +67,16 @@ export function createSkinPreviewPainter(
       ? getSheetGrid(draft.sheet, image.width, image.height)
       : null
 
-    const drawRole = (role: TileRole, x: number, y: number): void => {
+    const drawRole = (requested: TileRole, x: number, y: number): void => {
+      // An unbound wall piece falls back to the base wall tile, so a six-tile
+      // skin still draws every wall. `getBaseRole` is shared with the game so
+      // the two cannot disagree about an incomplete skin.
+      const role = isRoleBound(draft, requested)
+        ? requested
+        : getBaseRole(requested)
       const tileIndex = draft.bindings[role]
 
-      if (image && grid && tileIndex !== UNBOUND) {
+      if (image && grid && isRoleBound(draft, role)) {
         const rect = getSourceTileRect(draft.sheet, grid, tileIndex)
 
         if (rect.width > 0) {
@@ -90,7 +107,7 @@ export function createSkinPreviewPainter(
 
       if (cell.isWall) {
         if (touchesFloor(editorDocument, position)) {
-          drawRole('wall', x, y)
+          drawRole(getWallRoleAt(editorDocument, position), x, y)
         }
 
         continue

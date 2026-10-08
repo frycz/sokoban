@@ -4,12 +4,7 @@ import type { Session } from './session'
 import { getAtlasSize, packSkinAtlas } from './skin/atlas'
 import { createPalettePainter } from './skin/palette'
 import { createSkinPreviewPainter } from './skin/preview'
-import {
-  ROLE_LABELS,
-  ROLE_ORDER,
-  getTopRoleAtCell,
-  type TileRole,
-} from './skin/roles'
+import { ROLE_LABELS, getTopRoleAtPosition, type TileRole } from './skin/roles'
 import {
   computeSheetLayout,
   getSheetGrid,
@@ -22,14 +17,45 @@ import {
   clearBindings,
   createEmptySkinDraft,
   formatSkinManifest,
-  getUnboundRoles,
+  getBoundRoles,
+  getMissingRequiredRoles,
+  isRoleBound,
   isSkinComplete,
   setSheetSettings,
   toSkinFileName,
+  unbindRole,
   type SkinDraft,
 } from './skin/skin'
 
 const THUMBNAIL_SIZE = 24
+
+/**
+ * The sidebar groups roles rather than listing fourteen flat, because the two
+ * halves are gated differently: the first six block an export, the wall pieces
+ * are optional refinements that fall back to `wall`.
+ */
+const ROLE_GROUPS: readonly {
+  readonly heading: string
+  readonly roles: readonly TileRole[]
+}[] = [
+  {
+    heading: 'required',
+    roles: ['floor', 'goal', 'wall', 'box', 'boxOnGoal', 'player'],
+  },
+  {
+    heading: 'wall edges — optional, fall back to wall fill',
+    roles: [
+      'wallTop',
+      'wallRight',
+      'wallBottom',
+      'wallLeft',
+      'wallTopLeft',
+      'wallTopRight',
+      'wallBottomRight',
+      'wallBottomLeft',
+    ],
+  },
+]
 
 export function createSkinMode(session: Session): EditorMode {
   const fileInput = requireElement<HTMLInputElement>('#sheet-file')
@@ -97,21 +123,28 @@ export function createSkinMode(session: Session): EditorMode {
       'warning',
     )
 
-    const unbound = getUnboundRoles(draft)
+    const missing = getMissingRequiredRoles(draft)
 
-    if (unbound.length === 0) {
-      setMessage('All six roles bound — ready to export.', 'ok')
+    if (missing.length > 0) {
+      setMessage(
+        `${missing.length} required unbound: ${missing.map((role) => ROLE_LABELS[role]).join(', ')}.`,
+        'error',
+      )
+      setMessage(
+        'Pick a tile, then click a role below or a cell in the preview.',
+        'warning',
+      )
 
       return
     }
 
+    const wallPieces = getBoundRoles(draft).filter((role) =>
+      role.startsWith('wall'),
+    ).length
+
     setMessage(
-      `${unbound.length} unbound: ${unbound.map((role) => ROLE_LABELS[role]).join(', ')}.`,
-      'error',
-    )
-    setMessage(
-      'Pick a tile, then click a role below or a cell in the preview.',
-      'warning',
+      `Ready to export — ${getBoundRoles(draft).length} tiles, ${wallPieces} of 9 wall pieces.`,
+      'ok',
     )
   }
 
@@ -122,35 +155,57 @@ export function createSkinMode(session: Session): EditorMode {
 
     roleList.replaceChildren()
 
-    for (const role of ROLE_ORDER) {
-      const tileIndex = draft.bindings[role]
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.dataset.role = role
+    for (const group of ROLE_GROUPS) {
+      const heading = document.createElement('p')
+      heading.className = 'role-heading'
+      heading.textContent = group.heading
+      roleList.append(heading)
 
-      const thumbnail = document.createElement('span')
-      thumbnail.className = 'tile'
+      for (const role of group.roles) {
+        const tileIndex = draft.bindings[role]
+        const row = document.createElement('div')
+        row.className = 'role-row'
 
-      if (sheetImage && sheetObjectUrl && grid && tileIndex !== UNBOUND) {
-        const rect = getSourceTileRect(draft.sheet, grid, tileIndex)
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.dataset.role = role
 
-        if (rect.width > 0) {
-          const scale = THUMBNAIL_SIZE / rect.width
-          thumbnail.style.backgroundImage = `url(${sheetObjectUrl})`
-          thumbnail.style.backgroundSize = `${sheetImage.width * scale}px ${sheetImage.height * scale}px`
-          thumbnail.style.backgroundPosition = `${-rect.x * scale}px ${-rect.y * scale}px`
+        const thumbnail = document.createElement('span')
+        thumbnail.className = 'tile'
+
+        if (sheetImage && sheetObjectUrl && grid && tileIndex !== UNBOUND) {
+          const rect = getSourceTileRect(draft.sheet, grid, tileIndex)
+
+          if (rect.width > 0) {
+            const scale = THUMBNAIL_SIZE / rect.width
+            thumbnail.style.backgroundImage = `url(${sheetObjectUrl})`
+            thumbnail.style.backgroundSize = `${sheetImage.width * scale}px ${sheetImage.height * scale}px`
+            thumbnail.style.backgroundPosition = `${-rect.x * scale}px ${-rect.y * scale}px`
+          }
         }
+
+        const label = document.createElement('span')
+        label.textContent = ROLE_LABELS[role]
+
+        const bound = document.createElement('span')
+        bound.className = 'bound'
+        bound.textContent = tileIndex === UNBOUND ? 'unbound' : `#${tileIndex}`
+
+        button.append(thumbnail, label, bound)
+        row.append(button)
+
+        if (isRoleBound(draft, role)) {
+          const clear = document.createElement('button')
+          clear.type = 'button'
+          clear.className = 'clear'
+          clear.dataset.clear = role
+          clear.title = `Unbind ${ROLE_LABELS[role]}`
+          clear.textContent = '×'
+          row.append(clear)
+        }
+
+        roleList.append(row)
       }
-
-      const label = document.createElement('span')
-      label.textContent = ROLE_LABELS[role]
-
-      const bound = document.createElement('span')
-      bound.className = 'bound'
-      bound.textContent = tileIndex === UNBOUND ? 'unbound' : `#${tileIndex}`
-
-      button.append(thumbnail, label, bound)
-      roleList.append(button)
     }
   }
 
@@ -293,12 +348,23 @@ export function createSkinMode(session: Session): EditorMode {
       return
     }
 
-    assign(getTopRoleAtCell(editorDocument.cells[position]))
+    assign(getTopRoleAtPosition(editorDocument, position))
   })
 
   roleList.addEventListener('click', (event) => {
-    const button = (event.target as Element).closest('button[data-role]')
-    const role = button?.getAttribute('data-role')
+    const target = event.target as Element
+    const cleared = target
+      .closest('button[data-clear]')
+      ?.getAttribute('data-clear')
+
+    if (cleared) {
+      draft = unbindRole(draft, cleared as TileRole)
+      update()
+
+      return
+    }
+
+    const role = target.closest('button[data-role]')?.getAttribute('data-role')
 
     if (role) {
       assign(role as TileRole)

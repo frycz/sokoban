@@ -1,4 +1,3 @@
-import { ROLE_ORDER } from '../../render/tile-roles'
 import {
   EXPORT_MARGIN,
   EXPORT_SPACING,
@@ -6,7 +5,7 @@ import {
   getSheetGrid,
   getSourceTileRect,
 } from './sheet'
-import { UNBOUND, type SkinDraft } from './skin'
+import { getBoundRoles, getMissingRequiredRoles, type SkinDraft } from './skin'
 
 export type AtlasSize = {
   readonly width: number
@@ -14,33 +13,40 @@ export type AtlasSize = {
 }
 
 /**
- * One row, one tile per role, in `ROLE_ORDER`. Every tile is extruded by a
- * pixel, which the margin and spacing in the manifest describe.
+ * One row, one tile per bound role, in `ROLE_ORDER`. Unbound roles take no
+ * column — the manifest's role list says what is actually there — so a six-tile
+ * skin exports six tiles and a fully pieced one exports fourteen.
  */
 export function getAtlasSize(draft: SkinDraft): AtlasSize {
   const { tileWidth, tileHeight } = clampSheetSettings(draft.sheet)
 
   return {
-    width: ROLE_ORDER.length * (tileWidth + EXPORT_SPACING),
+    width: getBoundRoles(draft).length * (tileWidth + EXPORT_SPACING),
     height: tileHeight + EXPORT_SPACING,
   }
 }
 
-export function getAtlasSlotX(draft: SkinDraft, roleIndex: number): number {
+export function getAtlasSlotX(draft: SkinDraft, columnIndex: number): number {
   const { tileWidth } = clampSheetSettings(draft.sheet)
 
-  return EXPORT_MARGIN + roleIndex * (tileWidth + EXPORT_SPACING)
+  return EXPORT_MARGIN + columnIndex * (tileWidth + EXPORT_SPACING)
 }
 
 /**
  * Repacks only the tiles the skin actually uses, so a skin cut from a 500-tile
- * sheet ships as six tiles. Throws on an incomplete draft rather than emitting
- * an atlas with holes in it.
+ * sheet ships as a handful. Refuses a draft missing a required role rather than
+ * emitting an atlas with holes in it.
  */
 export function packSkinAtlas(
   draft: SkinDraft,
   image: ImageBitmap,
 ): HTMLCanvasElement {
+  const missing = getMissingRequiredRoles(draft)
+
+  if (missing.length > 0) {
+    throw new Error(`Cannot export: no tile for ${missing.join(', ')}`)
+  }
+
   const { tileWidth, tileHeight } = clampSheetSettings(draft.sheet)
   const size = getAtlasSize(draft)
   const canvas = document.createElement('canvas')
@@ -57,14 +63,8 @@ export function packSkinAtlas(
 
   const grid = getSheetGrid(draft.sheet, image.width, image.height)
 
-  for (const [roleIndex, role] of ROLE_ORDER.entries()) {
-    const tileIndex = draft.bindings[role]
-
-    if (tileIndex === UNBOUND) {
-      throw new Error(`Cannot export: ${role} has no tile`)
-    }
-
-    const source = getSourceTileRect(draft.sheet, grid, tileIndex)
+  for (const [columnIndex, role] of getBoundRoles(draft).entries()) {
+    const source = getSourceTileRect(draft.sheet, grid, draft.bindings[role])
 
     if (source.width === 0) {
       throw new Error(
@@ -72,7 +72,7 @@ export function packSkinAtlas(
       )
     }
 
-    const x = getAtlasSlotX(draft, roleIndex)
+    const x = getAtlasSlotX(draft, columnIndex)
     const y = EXPORT_MARGIN
 
     const copy = (

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { ROLE_ORDER } from '../../render/tile-roles'
+import {
+  REQUIRED_ROLES,
+  ROLE_ORDER,
+  WALL_VARIANT_ROLES,
+} from '../../render/tile-roles'
 import { getAtlasSize, getAtlasSlotX } from './atlas'
 import {
   UNBOUND,
@@ -7,10 +11,12 @@ import {
   clearBindings,
   createEmptySkinDraft,
   formatSkinManifest,
-  getUnboundRoles,
+  getBoundRoles,
+  getMissingRequiredRoles,
   isSkinComplete,
   setSheetSettings,
   toSkinFileName,
+  unbindRole,
   type SkinDraft,
 } from './skin'
 
@@ -21,11 +27,19 @@ function bindEverything(draft: SkinDraft): SkinDraft {
   )
 }
 
+function bindRequired(draft: SkinDraft): SkinDraft {
+  return REQUIRED_ROLES.reduce(
+    (current, role, index) => bindRole(current, role, index),
+    draft,
+  )
+}
+
 describe('createEmptySkinDraft', () => {
   it('starts with every role unbound', () => {
     const draft = createEmptySkinDraft()
 
-    expect(getUnboundRoles(draft)).toEqual([...ROLE_ORDER])
+    expect(getBoundRoles(draft)).toEqual([])
+    expect(getMissingRequiredRoles(draft)).toEqual([...REQUIRED_ROLES])
     expect(isSkinComplete(draft)).toBe(false)
   })
 })
@@ -54,8 +68,42 @@ describe('bindRole', () => {
     expect(bindRole(draft, 'wall', 7)).toBe(draft)
   })
 
-  it('is complete once all six roles are bound', () => {
-    expect(isSkinComplete(bindEverything(createEmptySkinDraft()))).toBe(true)
+  it('is complete on the required six alone — wall pieces are optional', () => {
+    const draft = bindRequired(createEmptySkinDraft())
+
+    expect(isSkinComplete(draft)).toBe(true)
+    expect(getBoundRoles(draft)).toHaveLength(REQUIRED_ROLES.length)
+  })
+
+  it('is incomplete while a required role is missing, whatever else is bound', () => {
+    const draft = WALL_VARIANT_ROLES.reduce(
+      (current, role, index) => bindRole(current, role, index),
+      createEmptySkinDraft(),
+    )
+
+    expect(isSkinComplete(draft)).toBe(false)
+    expect(getMissingRequiredRoles(draft)).toEqual([...REQUIRED_ROLES])
+  })
+})
+
+describe('unbindRole', () => {
+  it('removes a binding, so an optional piece can be taken back out', () => {
+    const draft = unbindRole(bindEverything(createEmptySkinDraft()), 'wallTop')
+
+    expect(draft.bindings.wallTop).toBe(UNBOUND)
+    expect(getBoundRoles(draft)).not.toContain('wallTop')
+    expect(isSkinComplete(draft)).toBe(true)
+  })
+})
+
+describe('getBoundRoles', () => {
+  it('is in atlas column order, not the order they were bound', () => {
+    let draft = createEmptySkinDraft()
+    draft = bindRole(draft, 'player', 1)
+    draft = bindRole(draft, 'floor', 2)
+    draft = bindRole(draft, 'wallTop', 3)
+
+    expect(getBoundRoles(draft)).toEqual(['floor', 'wallTop', 'player'])
   })
 })
 
@@ -63,7 +111,7 @@ describe('clearBindings', () => {
   it('drops every binding, because an index only means one grid', () => {
     const draft = clearBindings(bindEverything(createEmptySkinDraft()))
 
-    expect(getUnboundRoles(draft)).toEqual([...ROLE_ORDER])
+    expect(getBoundRoles(draft)).toEqual([])
   })
 
   it('keeps the name and the sheet settings', () => {
@@ -111,16 +159,25 @@ describe('formatSkinManifest', () => {
       margin: 1,
       spacing: 2,
       pixelated: true,
-      roles: ['floor', 'goal', 'wall', 'box', 'boxOnGoal', 'player'],
+      roles: [...ROLE_ORDER],
     })
   })
 
-  it('names the roles in atlas column order, so the layout is data', () => {
-    const manifest = JSON.parse(formatSkinManifest(createEmptySkinDraft())) as {
-      roles: string[]
-    }
+  it('lists only the roles the image actually contains', () => {
+    // This is what lets a six-tile skin and a fourteen-tile skin share one
+    // format with no version field: the file says what is in it.
+    const manifest = JSON.parse(
+      formatSkinManifest(bindRequired(createEmptySkinDraft())),
+    ) as { roles: string[] }
 
-    expect(manifest.roles).toEqual([...ROLE_ORDER])
+    expect(manifest.roles).toEqual([
+      'floor',
+      'goal',
+      'wall',
+      'box',
+      'boxOnGoal',
+      'player',
+    ])
   })
 
   it('ends with a newline', () => {
@@ -131,11 +188,18 @@ describe('formatSkinManifest', () => {
 })
 
 describe('getAtlasSize', () => {
-  it('is one row of extruded tiles', () => {
-    expect(getAtlasSize(createEmptySkinDraft())).toEqual({
+  it('has a column per bound role and nothing for the rest', () => {
+    expect(getAtlasSize(bindRequired(createEmptySkinDraft()))).toEqual({
       width: 6 * (32 + 2),
       height: 32 + 2,
     })
+    expect(getAtlasSize(bindEverything(createEmptySkinDraft())).width).toBe(
+      14 * (32 + 2),
+    )
+  })
+
+  it('is empty before anything is bound', () => {
+    expect(getAtlasSize(createEmptySkinDraft()).width).toBe(0)
   })
 
   it('leaves exactly one pixel of extrusion between neighbours', () => {
@@ -150,7 +214,7 @@ describe('getAtlasSize', () => {
   })
 
   it('tracks a non-square tile', () => {
-    const draft = setSheetSettings(createEmptySkinDraft(), {
+    const draft = setSheetSettings(bindRequired(createEmptySkinDraft()), {
       tileWidth: 16,
       tileHeight: 24,
       margin: 0,
