@@ -24,7 +24,7 @@ export function parse(text: string): ParsedLevel {
   const open = new Array<boolean>(cellCount).fill(false)
   const goalPositions = new Set<number>()
   const boxPositions = new Set<number>()
-  let playerPosition = -1
+  let playerCurrentPosition = -1
 
   for (let y = 0; y < height; y++) {
     const line = lines[y]
@@ -54,12 +54,12 @@ export function parse(text: string): ParsedLevel {
           break
         case '@':
           open[index] = true
-          playerPosition = index
+          playerCurrentPosition = index
           break
         case '+':
           open[index] = true
           goalPositions.add(index)
-          playerPosition = index
+          playerCurrentPosition = index
           break
         default:
           throw new Error(
@@ -69,7 +69,7 @@ export function parse(text: string): ParsedLevel {
     }
   }
 
-  if (playerPosition < 0) throw new Error('Level has no player (@ or +)')
+  if (playerCurrentPosition < 0) throw new Error('Level has no player (@ or +)')
   if (boxPositions.size === 0) throw new Error('Level has no boxes')
   if (boxPositions.size !== goalPositions.size) {
     throw new Error(
@@ -77,7 +77,7 @@ export function parse(text: string): ParsedLevel {
     )
   }
 
-  const interior = reachableFrom(open, width, height, playerPosition)
+  const interior = reachableFrom(open, width, height, playerCurrentPosition)
   for (const box of boxPositions) {
     if (!interior[box]) throw new Error(`Box at ${describe(width, box)} is outside the walls`)
   }
@@ -90,7 +90,7 @@ export function parse(text: string): ParsedLevel {
   const wallMap = interior.map((reached) => !reached)
 
   const level: Level = { width, height, wallMap, goalPositions }
-  return { level, initial: { level, playerPosition, boxPositions } }
+  return { level, initial: { level, playerCurrentPosition, boxPositions } }
 }
 
 /** Flood fill across open cells, four-connected, without wrapping rows. */

@@ -1,4 +1,4 @@
-import { neighbour } from './rules'
+import { getNextPosition } from './rules'
 import type { PlayerMoveDirection, State } from './types'
 
 /**
@@ -10,21 +10,21 @@ import type { PlayerMoveDirection, State } from './types'
  * a solution is just playerMoveDirections.reduce(step, initial).
  */
 export function step(state: State, playerMoveDirection: PlayerMoveDirection): State {
-  const { level, playerPosition, boxPositions } = state
+  const { level, playerCurrentPosition, boxPositions } = state
 
-  const destination = neighbour(level, playerPosition, playerMoveDirection)
-  if (destination < 0 || level.wallMap[destination]) return state
+  const playerNextPosition = getNextPosition(level, playerCurrentPosition, playerMoveDirection)
+  if (playerNextPosition < 0 || level.wallMap[playerNextPosition]) return state
 
-  if (!boxPositions.has(destination)) {
-    return { level, playerPosition: destination, boxPositions }
+  if (!boxPositions.has(playerNextPosition)) {
+    return { level, playerCurrentPosition: playerNextPosition, boxPositions }
   }
 
   // Pushing: the cell beyond the box has to be free of both walls and boxes.
-  const beyond = neighbour(level, destination, playerMoveDirection)
+  const beyond = getNextPosition(level, playerNextPosition, playerMoveDirection)
   if (beyond < 0 || level.wallMap[beyond] || boxPositions.has(beyond)) return state
 
   const movedBoxPositions = new Set(boxPositions)
-  movedBoxPositions.delete(destination)
+  movedBoxPositions.delete(playerNextPosition)
   movedBoxPositions.add(beyond)
-  return { level, playerPosition: destination, boxPositions: movedBoxPositions }
+  return { level, playerCurrentPosition: playerNextPosition, boxPositions: movedBoxPositions }
 }

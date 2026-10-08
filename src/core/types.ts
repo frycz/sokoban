@@ -17,6 +17,6 @@ export type Level = {
 /** Everything that changes while playing. Positions are flat indices. */
 export type State = {
   level: Level
-  playerPosition: number
+  playerCurrentPosition: number
   boxPositions: ReadonlySet<number>
 }

@@ -12,7 +12,7 @@ const DELTAS: Record<PlayerMoveDirection, readonly [number, number]> = {
  * leaves the grid. Going through x/y rather than adding +/-1 is what stops a
  * `left` move at x === 0 from wrapping to the end of the previous row.
  */
-export function neighbour(
+export function getNextPosition(
   level: Level,
   position: number,
   playerMoveDirection: PlayerMoveDirection

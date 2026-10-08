@@ -19,7 +19,7 @@ export function createRenderer(canvas: HTMLCanvasElement): (state: State) => voi
   if (!context) throw new Error('Canvas 2D context is unavailable')
 
   return function render(state: State): void {
-    const { level, playerPosition, boxPositions } = state
+    const { level, playerCurrentPosition, boxPositions } = state
 
     const pixelRatio = window.devicePixelRatio || 1
     const cssWidth = canvas.clientWidth
@@ -78,7 +78,7 @@ export function createRenderer(canvas: HTMLCanvasElement): (state: State) => voi
       context.fill()
     }
 
-    const { x, y } = topLeftOf(playerPosition)
+    const { x, y } = topLeftOf(playerCurrentPosition)
     context.fillStyle = COLORS.player
     context.beginPath()
     context.arc(x + tile / 2, y + tile / 2, tile * 0.33, 0, Math.PI * 2)
