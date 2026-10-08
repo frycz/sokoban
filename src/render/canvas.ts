@@ -1,4 +1,4 @@
-import type { Level, State } from '../core/types'
+import type { Level, LevelState } from '../core/types'
 
 const COLORS = {
   floor: '#262b38',
@@ -14,12 +14,12 @@ const COLORS = {
  * Builds a renderer bound to one canvas. The returned function is the only
  * thing the host needs, and it knows nothing beyond the state it is handed.
  */
-export function createRenderer(canvas: HTMLCanvasElement): (state: State) => void {
+export function createRenderer(canvas: HTMLCanvasElement): (levelState: LevelState) => void {
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Canvas 2D context is unavailable')
 
-  return function render(state: State): void {
-    const { level, playerCurrentPosition, boxPositions } = state
+  return function render(levelState: LevelState): void {
+    const { level, playerCurrentPosition, boxPositions } = levelState
 
     const pixelRatio = window.devicePixelRatio || 1
     const cssWidth = canvas.clientWidth

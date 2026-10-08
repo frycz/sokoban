@@ -15,10 +15,10 @@ TypeScript, built with Vite. `npm run dev` to play, `npm run typecheck` to check
 
 | File | Exports |
 | --- | --- |
-| `types.ts` | `PlayerMoveDirection`, `Level`, `State` |
-| `level.ts` | `parse(xsb: string)` → `Level` plus the initial `State` |
-| `step.ts` | `step(state: State, playerMoveDirection: PlayerMoveDirection): State` — returns the same state for illegal moves |
-| `rules.ts` | `isSolved(state)`, `getNextPosition(level, position, playerMoveDirection)` |
+| `types.ts` | `PlayerMoveDirection`, `Level`, `LevelState` |
+| `level.ts` | `parse(xsb: string)` → `Level` plus the initial `LevelState` |
+| `step.ts` | `step(levelState: LevelState, playerMoveDirection: PlayerMoveDirection): LevelState` — returns the same state for illegal moves |
+| `rules.ts` | `isSolved(levelState)`, `getNextPosition(level, position, playerMoveDirection)` |
 
 ### State shape
 
@@ -30,7 +30,7 @@ type Level = {
   wallMap: boolean[]
   goalPositions: ReadonlySet<number>
 }
-type State = {
+type LevelState = {
   level: Level
   playerCurrentPosition: number
   boxPositions: ReadonlySet<number>
@@ -54,7 +54,7 @@ type Command =
   | { type: 'reset' }
 ```
 
-Static data (`Level`) is separated from dynamic data (`State`). The level never changes, so snapshots for undo only copy the player position and the box set.
+Static data (`Level`) is separated from dynamic data (`LevelState`). The level never changes, so snapshots for undo only copy the player position and the box set.
 
 ### Positions are flat indices
 
@@ -92,7 +92,7 @@ Levels are parsed from standard XSB text, so existing level sets work without co
 
 ## `host/` — the only mutable thing in the system
 
-Owns a `State[]` history stack — the only mutable value in the program. Maps keys to a command, calls `step`, pushes the result, and handles undo by popping and reset by truncating to the first entry. Calls the renderer after each change. No game rules live here.
+Owns a `LevelState[]` history stack — the only mutable value in the program. Maps keys to a command, calls `step`, pushes the result, and handles undo by popping and reset by truncating to the first entry. Calls the renderer after each change. No game rules live here.
 
 Undo is deliberately outside engine state. Because `step` is pure, keeping a stack of previous states gives undo, redo, and replay for free, and the engine stays simple.
 
@@ -102,7 +102,7 @@ Keys: arrows or WASD to move, Z or U to undo, R to reset.
 
 ## `render/` — dumb
 
-`createRenderer(canvas)` returns a `render(state): void` that redraws the whole board. Reads `level.wallMap` and `level.goalPositions` for the board, and `playerCurrentPosition` and `boxPositions` for the movable pieces. No event listeners, no game logic, no knowledge of history.
+`createRenderer(canvas)` returns a `render(levelState): void` that redraws the whole board. Reads `level.wallMap` and `level.goalPositions` for the board, and `playerCurrentPosition` and `boxPositions` for the movable pieces. No event listeners, no game logic, no knowledge of history.
 
 Full redraw every time is deliberate: it keeps the renderer a pure function of state with nothing to invalidate, and a Sokoban board is small enough that the cost is irrelevant.
 

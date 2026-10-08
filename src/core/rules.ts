@@ -1,4 +1,4 @@
-import type { Level, PlayerMoveDirection, State } from './types'
+import type { Level, LevelState, PlayerMoveDirection } from './types'
 
 const DELTAS: Record<PlayerMoveDirection, readonly [number, number]> = {
   up: [0, -1],
@@ -24,9 +24,9 @@ export function getNextPosition(
   return y * level.width + x
 }
 
-export function isSolved(state: State): boolean {
-  for (const box of state.boxPositions) {
-    if (!state.level.goalPositions.has(box)) return false
+export function isSolved(levelState: LevelState): boolean {
+  for (const box of levelState.boxPositions) {
+    if (!levelState.level.goalPositions.has(box)) return false
   }
   return true
 }

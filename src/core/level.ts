@@ -1,6 +1,6 @@
-import type { Level, State } from './types'
+import type { Level, LevelState } from './types'
 
-export type ParsedLevel = { level: Level; initial: State }
+export type ParsedLevel = { level: Level; initial: LevelState }
 
 /**
  * Parses one level in XSB notation:

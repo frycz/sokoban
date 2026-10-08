@@ -15,7 +15,7 @@ export type Level = {
 }
 
 /** Everything that changes while playing. Positions are flat indices. */
-export type State = {
+export type LevelState = {
   level: Level
   playerCurrentPosition: number
   boxPositions: ReadonlySet<number>

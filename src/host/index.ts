@@ -1,7 +1,7 @@
 import { parse } from '../core/level'
 import { isSolved } from '../core/rules'
 import { step } from '../core/step'
-import type { PlayerMoveDirection, State } from '../core/types'
+import type { LevelState, PlayerMoveDirection } from '../core/types'
 import { createRenderer } from '../render/canvas'
 import { LEVEL } from './level-data'
 
@@ -39,7 +39,7 @@ const { initial } = parse(LEVEL)
 
 // The one piece of mutable state in the program. Undo and reset are history
 // operations, which is why the engine does not know about them.
-const history: State[] = [initial]
+const history: LevelState[] = [initial]
 const current = () => history[history.length - 1]
 
 function run(command: Command): void {
@@ -65,10 +65,10 @@ function run(command: Command): void {
 }
 
 function update(): void {
-  const state = current()
-  render(state)
+  const levelState = current()
+  render(levelState)
   const moves = history.length - 1
-  statusLine.textContent = isSolved(state)
+  statusLine.textContent = isSolved(levelState)
     ? `Solved in ${moves} moves. Press R to play again.`
     : `Moves: ${moves}   ·   arrows/WASD to move, Z to undo, R to reset`
 }
