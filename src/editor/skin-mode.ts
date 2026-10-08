@@ -6,6 +6,7 @@ import {
   type EditorMode,
 } from './dom'
 import { computeGridLayout, getPositionAtPixel } from './layout'
+import type { SkinExport } from './publish'
 import type { Session } from './session'
 import { readStoredText, writeStoredText } from './storage'
 import { decodeStoredSkin, encodeStoredSkin } from './stored-state'
@@ -13,12 +14,8 @@ import { getAtlasSize, packSkinAtlas } from './skin/atlas'
 import { createPalettePainter } from './skin/palette'
 import { createSkinPreviewPainter } from './skin/preview'
 import { ROLE_LABELS, getTopRoleAtPosition, type TileRole } from './skin/roles'
-import {
-  computeSheetLayout,
-  getSheetGrid,
-  getSourceTileRect,
-  getTileIndexAtPixel,
-} from './skin/sheet'
+import { getSheetGrid, getSourceTileRect } from '../render/sheet'
+import { computeSheetLayout, getTileIndexAtPixel } from './skin/palette-layout'
 import {
   UNBOUND,
   bindRole,
@@ -36,6 +33,12 @@ import {
 } from './skin/skin'
 
 const THUMBNAIL_SIZE = 24
+
+/**
+ * Multiples of the fit-to-view scale, so `1` always shows the whole sheet
+ * whatever its size and the steps above it are what pan around.
+ */
+const ZOOM_STEPS: readonly number[] = [1, 2, 3, 4, 6, 8, 12, 16]
 
 /**
  * The sidebar groups roles rather than listing fourteen flat, because the two
@@ -65,7 +68,17 @@ const ROLE_GROUPS: readonly {
   },
 ]
 
-export function createSkinMode(session: Session): EditorMode {
+/**
+ * Skin mode plus the one thing outside it that needs the skin: publishing a
+ * level bundle, which is both halves of the editor at once. The draft and the
+ * loaded sheet stay in this closure — `getSkinExport` hands out the packed
+ * result, not the state.
+ */
+export type SkinMode = EditorMode & {
+  readonly getSkinExport: () => SkinExport | null
+}
+
+export function createSkinMode(session: Session): SkinMode {
   const fileInput = requireElement<HTMLInputElement>('#sheet-file')
   const tileWidthInput = requireElement<HTMLInputElement>('#tile-width')
   const tileHeightInput = requireElement<HTMLInputElement>('#tile-height')
@@ -73,14 +86,18 @@ export function createSkinMode(session: Session): EditorMode {
   const spacingInput = requireElement<HTMLInputElement>('#sheet-spacing')
   const pixelatedInput = requireElement<HTMLInputElement>('#pixelated')
   const nameInput = requireElement<HTMLInputElement>('#skin-name')
+  const paletteView = requireElement<HTMLElement>('#palette-view')
   const paletteCanvas = requireElement<HTMLCanvasElement>('#sheet-palette')
+  const zoomOutButton = requireElement<HTMLButtonElement>('#zoom-out')
+  const zoomInButton = requireElement<HTMLButtonElement>('#zoom-in')
+  const zoomLevel = requireElement<HTMLElement>('#zoom-level')
   const previewCanvas = requireElement<HTMLCanvasElement>('#skin-preview')
   const report = requireElement<HTMLElement>('#skin-report')
   const roleList = requireElement<HTMLElement>('#role-list')
   const atlasButton = requireElement<HTMLButtonElement>('#export-atlas')
   const manifestButton = requireElement<HTMLButtonElement>('#export-manifest')
 
-  const paintPalette = createPalettePainter(paletteCanvas)
+  const paintPalette = createPalettePainter(paletteView, paletteCanvas)
   const paintPreview = createSkinPreviewPainter(previewCanvas)
 
   const stored = decodeStoredSkin(readStoredText('skin'))
@@ -89,6 +106,8 @@ export function createSkinMode(session: Session): EditorMode {
   let sheetImage: ImageBitmap | null = null
   let sheetDataUrl: string | null = stored?.sheetDataUrl ?? null
   let selectedTileIndex = UNBOUND
+  // A view setting, not part of the skin, so it is not stored with the draft.
+  let paletteZoom = 1
   // As in level mode: the draft came out of storage, so the two start in step
   // and nothing is written back until the draft actually differs.
   let savedSkin = encodeStoredSkin(draft, sheetDataUrl)
@@ -256,9 +275,24 @@ export function createSkinMode(session: Session): EditorMode {
       : 'Not being saved — browser storage is unavailable.'
   }
 
+  function renderZoomControls(): void {
+    zoomLevel.textContent = paletteZoom === 1 ? 'fit' : `${paletteZoom}×`
+    zoomOutButton.disabled =
+      sheetImage === null || paletteZoom === ZOOM_STEPS[0]
+    zoomInButton.disabled =
+      sheetImage === null || paletteZoom === ZOOM_STEPS[ZOOM_STEPS.length - 1]
+  }
+
   function update(): void {
     persist()
-    paintPalette(sheetImage, draft.sheet, draft.isPixelated, selectedTileIndex)
+    paintPalette(
+      sheetImage,
+      draft.sheet,
+      draft.isPixelated,
+      selectedTileIndex,
+      paletteZoom,
+    )
+    renderZoomControls()
     paintPreview(session.current(), draft, sheetImage)
     renderReport()
 
@@ -280,6 +314,34 @@ export function createSkinMode(session: Session): EditorMode {
 
     draft = bindRole(draft, role, selectedTileIndex)
     update()
+  }
+
+  /**
+   * Steps the zoom, keeping whatever was in the middle of the view in the
+   * middle of it — zooming in on a corner of a big sheet otherwise lands
+   * somewhere else entirely. The browser clamps the scroll offsets for us.
+   */
+  function zoomBy(steps: number): void {
+    const next = ZOOM_STEPS[ZOOM_STEPS.indexOf(paletteZoom) + steps]
+
+    if (next === undefined) {
+      return
+    }
+
+    const anchorX =
+      (paletteView.scrollLeft + paletteView.clientWidth / 2) /
+      Math.max(paletteCanvas.clientWidth, 1)
+    const anchorY =
+      (paletteView.scrollTop + paletteView.clientHeight / 2) /
+      Math.max(paletteCanvas.clientHeight, 1)
+
+    paletteZoom = next
+    update()
+
+    paletteView.scrollLeft =
+      anchorX * paletteCanvas.clientWidth - paletteView.clientWidth / 2
+    paletteView.scrollTop =
+      anchorY * paletteCanvas.clientHeight - paletteView.clientHeight / 2
   }
 
   async function loadSheet(file: File): Promise<void> {
@@ -326,6 +388,7 @@ export function createSkinMode(session: Session): EditorMode {
     sheetImage = null
     sheetDataUrl = null
     selectedTileIndex = UNBOUND
+    paletteZoom = 1
     savedSkin = encodeStoredSkin(draft, sheetDataUrl)
     storageNote = null
     // So that picking the same sheet again still fires a change event.
@@ -398,8 +461,9 @@ export function createSkinMode(session: Session): EditorMode {
     const layout = computeSheetLayout(
       sheetImage.width,
       sheetImage.height,
-      paletteCanvas.clientWidth,
-      paletteCanvas.clientHeight,
+      paletteView.clientWidth,
+      paletteView.clientHeight,
+      paletteZoom,
     )
     const tileIndex = getTileIndexAtPixel(
       draft.sheet,
@@ -416,6 +480,33 @@ export function createSkinMode(session: Session): EditorMode {
     selectedTileIndex = tileIndex
     update()
   })
+
+  zoomOutButton.addEventListener('click', () => {
+    zoomBy(-1)
+  })
+
+  zoomInButton.addEventListener('click', () => {
+    zoomBy(1)
+  })
+
+  // A plain wheel scrolls the zoomed sheet, as it does anywhere else; the
+  // modifier is what the browser's own page zoom uses, so it is the gesture
+  // already in people's hands.
+  paletteView.addEventListener(
+    'wheel',
+    (event) => {
+      if (!event.ctrlKey && !event.metaKey) {
+        return
+      }
+
+      event.preventDefault()
+
+      if (event.deltaY !== 0) {
+        zoomBy(event.deltaY < 0 ? 1 : -1)
+      }
+    },
+    { passive: false },
+  )
 
   previewCanvas.addEventListener('pointerdown', (event) => {
     const editorDocument = session.current()
@@ -482,5 +573,22 @@ export function createSkinMode(session: Session): EditorMode {
     setMessage(`Atlas is ${size.width}×${size.height} px.`, 'ok')
   })
 
-  return { update, reset }
+  /**
+   * The tiles for a level bundle, or null when there is no skin to ship — no
+   * sheet loaded, or a required role still unbound. Exactly the condition that
+   * disables the two download buttons, so what gets published is what the
+   * sidebar says is exportable.
+   */
+  function getSkinExport(): SkinExport | null {
+    if (!sheetImage || !isSkinComplete(draft)) {
+      return null
+    }
+
+    return {
+      manifest: formatSkinManifest(draft),
+      atlasDataUrl: packSkinAtlas(draft, sheetImage).toDataURL('image/png'),
+    }
+  }
+
+  return { update, reset, getSkinExport }
 }

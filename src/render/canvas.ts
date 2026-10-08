@@ -5,9 +5,27 @@ import {
 } from '../core/rules'
 import type { Level, LevelState } from '../core/types'
 import { COLORS } from './colors'
+import { getRoleColor, getSkinTileRect, type Skin } from './skin'
+import { getWallRole, type TileRole } from './tile-roles'
 
+type BoardLayout = {
+  readonly tile: number
+  readonly originX: number
+  readonly originY: number
+}
+
+/**
+ * `(state) => draw`, and nothing else: no event listeners, no game rules, no
+ * knowledge of history. A full redraw every time keeps the renderer a pure
+ * function of state with nothing to invalidate, and a Sokoban board is small
+ * enough that the cost is irrelevant.
+ *
+ * With a skin it draws the level's own tiles, and without one the procedural
+ * palette — which is also what a level exported with no tiles plays as.
+ */
 export function createRenderer(
   canvas: HTMLCanvasElement,
+  skin: Skin | null = null,
 ): (levelState: LevelState) => void {
   const context = canvas.getContext('2d')
 
@@ -16,79 +34,220 @@ export function createRenderer(
   }
 
   return function render(levelState: LevelState): void {
-    const { level, playerCurrentPosition, boxPositions } = levelState
+    const layout = prepareCanvas(canvas, context, levelState.level)
 
-    const pixelRatio = window.devicePixelRatio || 1
-    const cssWidth = canvas.clientWidth
-    const cssHeight = canvas.clientHeight
-    canvas.width = Math.round(cssWidth * pixelRatio)
-    canvas.height = Math.round(cssHeight * pixelRatio)
+    if (skin) {
+      context.imageSmoothingEnabled = !skin.isPixelated
+      drawSkinnedBoard(context, levelState, layout, skin)
 
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
-    context.clearRect(0, 0, cssWidth, cssHeight)
-
-    const tile = Math.floor(
-      Math.min(cssWidth / level.width, cssHeight / level.height),
-    )
-    const originX = Math.floor((cssWidth - tile * level.width) / 2)
-    const originY = Math.floor((cssHeight - tile * level.height) / 2)
-    const topLeftOf = (position: number) => ({
-      x: originX + getPositionX(level, position) * tile,
-      y: originY + getPositionY(level, position) * tile,
-    })
-
-    // Floor is one layer under the whole board, walls included, and everything
-    // else composites over it. Only cells outside the level are left bare.
-    for (let position = 0; position < level.wallMap.length; position++) {
-      const { x, y } = topLeftOf(position)
-      const isWall = level.wallMap[position]
-
-      if (isWall && !touchesFloor(level, position)) {
-        continue
-      }
-
-      context.fillStyle = COLORS.floor
-      context.fillRect(x, y, tile, tile)
-
-      if (isWall) {
-        context.fillStyle = COLORS.wall
-        context.fillRect(x, y, tile, tile)
-        context.fillStyle = COLORS.wallEdge
-        context.fillRect(x, y, tile, Math.max(1, Math.round(tile * 0.12)))
-        continue
-      }
-
-      if (level.goalPositions.has(position)) {
-        context.fillStyle = COLORS.goal
-        context.beginPath()
-        context.arc(x + tile / 2, y + tile / 2, tile * 0.16, 0, Math.PI * 2)
-        context.fill()
-      }
+      return
     }
 
-    for (const box of boxPositions) {
-      const { x, y } = topLeftOf(box)
-      const padding = tile * 0.14
-      context.fillStyle = level.goalPositions.has(box)
-        ? COLORS.boxDone
-        : COLORS.box
-      roundedRectanglePath(
-        context,
-        x + padding,
-        y + padding,
-        tile - padding * 2,
-        tile - padding * 2,
-        tile * 0.16,
-      )
+    drawProceduralBoard(context, levelState, layout)
+  }
+}
+
+/**
+ * Resizes the backing store to the element, clears it, and works out where the
+ * board sits. Shared by both painters so a skinned and an unskinned board land
+ * on exactly the same grid.
+ */
+function prepareCanvas(
+  canvas: HTMLCanvasElement,
+  context: CanvasRenderingContext2D,
+  level: Level,
+): BoardLayout {
+  const pixelRatio = window.devicePixelRatio || 1
+  const cssWidth = canvas.clientWidth
+  const cssHeight = canvas.clientHeight
+  canvas.width = Math.round(cssWidth * pixelRatio)
+  canvas.height = Math.round(cssHeight * pixelRatio)
+
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+  context.clearRect(0, 0, cssWidth, cssHeight)
+
+  const tile = Math.floor(
+    Math.min(cssWidth / level.width, cssHeight / level.height),
+  )
+
+  return {
+    tile,
+    originX: Math.floor((cssWidth - tile * level.width) / 2),
+    originY: Math.floor((cssHeight - tile * level.height) / 2),
+  }
+}
+
+function getTopLeft(
+  level: Level,
+  layout: BoardLayout,
+  position: number,
+): { readonly x: number; readonly y: number } {
+  return {
+    x: layout.originX + getPositionX(level, position) * layout.tile,
+    y: layout.originY + getPositionY(level, position) * layout.tile,
+  }
+}
+
+/**
+ * Layer order, which is also what the skin format asks of the art: floor under
+ * every cell of the board, walls included, then wall or goal over it, then the
+ * object over both. Floor being a layer rather than a tile the others replace is
+ * what lets every other tile use transparency.
+ */
+function drawSkinnedBoard(
+  context: CanvasRenderingContext2D,
+  levelState: LevelState,
+  layout: BoardLayout,
+  skin: Skin,
+): void {
+  const { level, playerCurrentPosition, boxPositions } = levelState
+
+  const drawRole = (role: TileRole, x: number, y: number): void => {
+    const rect = getSkinTileRect(skin, role)
+
+    if (!rect) {
+      // A manifest missing a role it was supposed to carry. Flat colour keeps
+      // the board readable instead of leaving a hole in it.
+      context.fillStyle = getRoleColor(role)
+      context.fillRect(x, y, layout.tile, layout.tile)
+
+      return
+    }
+
+    context.drawImage(
+      skin.image,
+      rect.x,
+      rect.y,
+      rect.width,
+      rect.height,
+      x,
+      y,
+      layout.tile,
+      layout.tile,
+    )
+  }
+
+  for (let position = 0; position < level.wallMap.length; position++) {
+    const isWall = level.wallMap[position]
+
+    // Outside the level nothing is drawn at all, not even floor, so a skin
+    // never has to supply art for it and the board keeps its silhouette.
+    if (isWall && !touchesFloor(level, position)) {
+      continue
+    }
+
+    const { x, y } = getTopLeft(level, layout, position)
+    drawRole('floor', x, y)
+
+    if (isWall) {
+      drawRole(getWallRoleAt(level, position), x, y)
+      continue
+    }
+
+    if (level.goalPositions.has(position)) {
+      drawRole('goal', x, y)
+    }
+  }
+
+  for (const box of boxPositions) {
+    const { x, y } = getTopLeft(level, layout, box)
+    drawRole(level.goalPositions.has(box) ? 'boxOnGoal' : 'box', x, y)
+  }
+
+  const player = getTopLeft(level, layout, playerCurrentPosition)
+  drawRole('player', player.x, player.y)
+}
+
+/** The same board in flat colour, for a level that shipped without tiles. */
+function drawProceduralBoard(
+  context: CanvasRenderingContext2D,
+  levelState: LevelState,
+  layout: BoardLayout,
+): void {
+  const { level, playerCurrentPosition, boxPositions } = levelState
+  const { tile } = layout
+
+  for (let position = 0; position < level.wallMap.length; position++) {
+    const { x, y } = getTopLeft(level, layout, position)
+    const isWall = level.wallMap[position]
+
+    if (isWall && !touchesFloor(level, position)) {
+      continue
+    }
+
+    context.fillStyle = COLORS.floor
+    context.fillRect(x, y, tile, tile)
+
+    if (isWall) {
+      context.fillStyle = COLORS.wall
+      context.fillRect(x, y, tile, tile)
+      context.fillStyle = COLORS.wallEdge
+      context.fillRect(x, y, tile, Math.max(1, Math.round(tile * 0.12)))
+      continue
+    }
+
+    if (level.goalPositions.has(position)) {
+      context.fillStyle = COLORS.goal
+      context.beginPath()
+      context.arc(x + tile / 2, y + tile / 2, tile * 0.16, 0, Math.PI * 2)
       context.fill()
     }
+  }
 
-    const { x, y } = topLeftOf(playerCurrentPosition)
-    context.fillStyle = COLORS.player
-    context.beginPath()
-    context.arc(x + tile / 2, y + tile / 2, tile * 0.33, 0, Math.PI * 2)
+  for (const box of boxPositions) {
+    const { x, y } = getTopLeft(level, layout, box)
+    const padding = tile * 0.14
+    context.fillStyle = level.goalPositions.has(box)
+      ? COLORS.boxDone
+      : COLORS.box
+    roundedRectanglePath(
+      context,
+      x + padding,
+      y + padding,
+      tile - padding * 2,
+      tile - padding * 2,
+      tile * 0.16,
+    )
     context.fill()
   }
+
+  const { x, y } = getTopLeft(level, layout, playerCurrentPosition)
+  context.fillStyle = COLORS.player
+  context.beginPath()
+  context.arc(x + tile / 2, y + tile / 2, tile * 0.33, 0, Math.PI * 2)
+  context.fill()
+}
+
+function isOpenAt(level: Level, x: number, y: number): boolean {
+  // Off the grid counts as wall, so the outer edge does not read as an exposed
+  // face. The parser seals every level anyway; this keeps it true regardless.
+  if (x < 0 || x >= level.width || y < 0 || y >= level.height) {
+    return false
+  }
+
+  return !level.wallMap[getPositionFromCoordinates(x, y, level.width)]
+}
+
+/**
+ * Which of the nine wall pieces this cell takes. The classifier itself is in
+ * `tile-roles.ts`, shared with the editor, so the level you draw and the level
+ * you play cannot disagree about which piece a wall gets; this only reads the
+ * neighbourhood off a `Level`.
+ */
+function getWallRoleAt(level: Level, position: number): TileRole {
+  const x = getPositionX(level, position)
+  const y = getPositionY(level, position)
+
+  return getWallRole({
+    north: isOpenAt(level, x, y - 1),
+    east: isOpenAt(level, x + 1, y),
+    south: isOpenAt(level, x, y + 1),
+    west: isOpenAt(level, x - 1, y),
+    northEast: isOpenAt(level, x + 1, y - 1),
+    southEast: isOpenAt(level, x + 1, y + 1),
+    southWest: isOpenAt(level, x - 1, y + 1),
+    northWest: isOpenAt(level, x - 1, y - 1),
+  })
 }
 
 function touchesFloor(level: Level, position: number): boolean {
@@ -97,23 +256,7 @@ function touchesFloor(level: Level, position: number): boolean {
 
   for (let offsetY = -1; offsetY <= 1; offsetY++) {
     for (let offsetX = -1; offsetX <= 1; offsetX++) {
-      const neighbourX = x + offsetX
-      const neighbourY = y + offsetY
-
-      if (neighbourX < 0 || neighbourX >= level.width) {
-        continue
-      }
-      if (neighbourY < 0 || neighbourY >= level.height) {
-        continue
-      }
-
-      const neighbourPosition = getPositionFromCoordinates(
-        neighbourX,
-        neighbourY,
-        level.width,
-      )
-
-      if (!level.wallMap[neighbourPosition]) {
+      if (isOpenAt(level, x + offsetX, y + offsetY)) {
         return true
       }
     }

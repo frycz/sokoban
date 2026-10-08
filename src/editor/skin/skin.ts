@@ -9,7 +9,7 @@ import {
   EXPORT_SPACING,
   clampSheetSettings,
   type SheetSettings,
-} from './sheet'
+} from '../../render/sheet'
 
 export const UNBOUND = -1
 

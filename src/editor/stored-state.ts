@@ -1,6 +1,6 @@
 import { ROLE_ORDER, type TileRole } from '../render/tile-roles'
 import type { EditorDocument } from './document'
-import { clampSheetSettings, type SheetSettings } from './skin/sheet'
+import { clampSheetSettings, type SheetSettings } from '../render/sheet'
 import {
   UNBOUND,
   clearBindings,

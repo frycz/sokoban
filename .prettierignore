@@ -1,4 +1,5 @@
 dist/
 dist-editor/
+levels/
 node_modules/
 package-lock.json

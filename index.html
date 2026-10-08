@@ -16,9 +16,6 @@
       body {
         display: flex;
         flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 16px;
         padding: 16px;
         box-sizing: border-box;
         background: #11131a;
@@ -29,6 +26,83 @@
           Menlo,
           monospace;
       }
+      /* Author-origin `display` beats the browser's `[hidden]` rule whatever
+         the specificity, so the inactive screen needs hiding explicitly. */
+      section[hidden] {
+        display: none;
+      }
+      #levels {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        max-width: 1000px;
+        width: 100%;
+        margin: 0 auto;
+      }
+      h1 {
+        margin: 8px 0 4px;
+        font-size: 16px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #e8edf7;
+      }
+      #levels p.hint {
+        margin: 0 0 16px;
+        color: #7d8699;
+      }
+      #level-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 12px;
+      }
+      button.level {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        font: inherit;
+        color: inherit;
+        text-align: left;
+        background: #1d2230;
+        border: 1px solid #2c3444;
+        border-radius: 6px;
+        padding: 8px;
+        cursor: pointer;
+      }
+      button.level:hover {
+        border-color: #63a8e0;
+      }
+      /* The miniature is the game's own renderer at card size, so the canvas
+         gets a fixed box to measure itself against rather than a fluid one. */
+      button.level canvas {
+        display: block;
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        background: #0c0e14;
+        border-radius: 4px;
+      }
+      button.level .name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      button.level .tiles {
+        color: #7d8699;
+        font-size: 12px;
+      }
+      #levels-report {
+        margin: 16px 0 0;
+        color: #d7b36a;
+        white-space: pre-line;
+      }
+      #game {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        min-height: 0;
+      }
       #board {
         flex: 1 1 auto;
         width: 100%;
@@ -37,13 +111,39 @@
       }
       #status {
         flex: 0 0 auto;
+        margin: 0;
         text-align: center;
+      }
+      button#back {
+        flex: 0 0 auto;
+        font: inherit;
+        color: #7d8699;
+        background: #1d2230;
+        border: 1px solid #2c3444;
+        border-radius: 4px;
+        padding: 5px 10px;
+        cursor: pointer;
+      }
+      button#back:hover {
+        color: inherit;
+        border-color: #4b5570;
       }
     </style>
   </head>
   <body>
-    <canvas id="board"></canvas>
-    <p id="status"></p>
+    <section id="levels">
+      <h1>Sokoban</h1>
+      <p class="hint">Pick a level.</p>
+      <div id="level-list"></div>
+      <p id="levels-report"></p>
+    </section>
+
+    <section id="game" hidden>
+      <canvas id="board"></canvas>
+      <p id="status"></p>
+      <button type="button" id="back">Levels (Esc)</button>
+    </section>
+
     <script type="module" src="/src/host/index.ts"></script>
   </body>
 </html>

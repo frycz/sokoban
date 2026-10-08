@@ -3,6 +3,9 @@
  * essentially any tileset in the wild, and an exported atlas is described with
  * the same vocabulary — so the game's loader slices our own output with the
  * identical arithmetic rather than a second, special-cased code path.
+ *
+ * It lives in `render/` rather than the editor because both sides need it: the
+ * editor cuts a picked sheet, the game cuts the atlas that came out of it.
  */
 export type SheetSettings = {
   readonly tileWidth: number
@@ -41,12 +44,6 @@ export type SheetRect = {
   readonly y: number
   readonly width: number
   readonly height: number
-}
-
-export type SheetLayout = {
-  readonly scale: number
-  readonly originX: number
-  readonly originY: number
 }
 
 const EMPTY_RECT: SheetRect = { x: 0, y: 0, width: 0, height: 0 }
@@ -122,65 +119,4 @@ export function getSourceTileRect(
     width: tileWidth,
     height: tileHeight,
   }
-}
-
-/**
- * Fits the whole sheet into the palette canvas. Scaling up snaps to a whole
- * number so a 16px tileset stays on pixel boundaries instead of shimmering.
- */
-export function computeSheetLayout(
-  imageWidth: number,
-  imageHeight: number,
-  cssWidth: number,
-  cssHeight: number,
-): SheetLayout {
-  if (imageWidth <= 0 || imageHeight <= 0) {
-    return { scale: 1, originX: 0, originY: 0 }
-  }
-
-  const fitted = Math.min(cssWidth / imageWidth, cssHeight / imageHeight)
-  const scale = fitted > 1 ? Math.floor(fitted) : fitted
-
-  return {
-    scale,
-    originX: Math.floor((cssWidth - imageWidth * scale) / 2),
-    originY: Math.floor((cssHeight - imageHeight * scale) / 2),
-  }
-}
-
-/** Returns -1 for a pixel outside the sheet, or in a margin or gutter. */
-export function getTileIndexAtPixel(
-  settings: SheetSettings,
-  grid: SheetGrid,
-  layout: SheetLayout,
-  pixelX: number,
-  pixelY: number,
-): number {
-  if (grid.tileCount === 0 || layout.scale <= 0) {
-    return -1
-  }
-
-  const { tileWidth, tileHeight, margin, spacing } =
-    clampSheetSettings(settings)
-  const imageX = (pixelX - layout.originX) / layout.scale - margin
-  const imageY = (pixelY - layout.originY) / layout.scale - margin
-
-  const column = Math.floor(imageX / (tileWidth + spacing))
-  const row = Math.floor(imageY / (tileHeight + spacing))
-
-  if (column < 0 || column >= grid.columns || row < 0 || row >= grid.rows) {
-    return -1
-  }
-
-  // Reject the gutters, so a click between tiles selects nothing rather than
-  // snapping to whichever neighbour happens to round closer.
-  if (imageX - column * (tileWidth + spacing) >= tileWidth) {
-    return -1
-  }
-
-  if (imageY - row * (tileHeight + spacing) >= tileHeight) {
-    return -1
-  }
-
-  return row * grid.columns + column
 }

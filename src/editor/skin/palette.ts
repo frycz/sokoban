@@ -1,9 +1,9 @@
 import {
-  computeSheetLayout,
   getSheetGrid,
   getSourceTileRect,
   type SheetSettings,
-} from './sheet'
+} from '../../render/sheet'
+import { computeSheetLayout } from './palette-layout'
 
 const PALETTE_COLORS = {
   empty: '#7d8699',
@@ -12,18 +12,23 @@ const PALETTE_COLORS = {
 }
 
 /**
- * Draws the loaded sheet at its own grid, scaled to fit, with the selected tile
- * ringed. Keeping the sheet's layout rather than reflowing tiles into a list
- * means the pointer handler can invert the same pure layout maths to work out
- * what was clicked.
+ * Draws the loaded sheet at its own grid, scaled to fit times the zoom, with
+ * the selected tile ringed. Keeping the sheet's layout rather than reflowing
+ * tiles into a list means the pointer handler can invert the same pure layout
+ * maths to work out what was clicked.
+ *
+ * `view` is the scroll container; the canvas is sized to the zoomed content so
+ * that panning is the browser's job rather than a second transform to invert.
  */
 export function createPalettePainter(
+  view: HTMLElement,
   canvas: HTMLCanvasElement,
 ): (
   image: ImageBitmap | null,
   settings: SheetSettings,
   isPixelated: boolean,
   selectedTileIndex: number,
+  zoom: number,
 ) => void {
   const context = canvas.getContext('2d')
 
@@ -31,10 +36,26 @@ export function createPalettePainter(
     throw new Error('Canvas 2D context is unavailable')
   }
 
-  return function paint(image, settings, isPixelated, selectedTileIndex): void {
+  return function paint(
+    image,
+    settings,
+    isPixelated,
+    selectedTileIndex,
+    zoom,
+  ): void {
+    const layout = computeSheetLayout(
+      image?.width ?? 0,
+      image?.height ?? 0,
+      view.clientWidth,
+      view.clientHeight,
+      zoom,
+    )
+    const cssWidth = layout.contentWidth
+    const cssHeight = layout.contentHeight
     const pixelRatio = window.devicePixelRatio || 1
-    const cssWidth = canvas.clientWidth
-    const cssHeight = canvas.clientHeight
+
+    canvas.style.width = `${cssWidth}px`
+    canvas.style.height = `${cssHeight}px`
     canvas.width = Math.round(cssWidth * pixelRatio)
     canvas.height = Math.round(cssHeight * pixelRatio)
 
@@ -51,12 +72,6 @@ export function createPalettePainter(
       return
     }
 
-    const layout = computeSheetLayout(
-      image.width,
-      image.height,
-      cssWidth,
-      cssHeight,
-    )
     const grid = getSheetGrid(settings, image.width, image.height)
 
     context.drawImage(

@@ -1,33 +1,10 @@
-import { COLORS } from '../../render/colors'
+import { getSheetGrid, getSourceTileRect } from '../../render/sheet'
+import { getRoleColor } from '../../render/skin'
 import { getBaseRole, type TileRole } from '../../render/tile-roles'
 import { getCellX, getCellY, type EditorDocument } from '../document'
 import { computeGridLayout } from '../layout'
 import { getWallRoleAt } from './roles'
-import { getSheetGrid, getSourceTileRect } from './sheet'
 import { isRoleBound, type SkinDraft } from './skin'
-
-/**
- * What an unbound role falls back to, so the preview is always readable and
- * what is still missing shows as a flat block rather than a hole. Every wall
- * piece shares the wall colour, since by then the sprite fallback has already
- * sent it to the base `wall` role.
- */
-const FALLBACK_COLORS: Record<TileRole, string> = {
-  floor: COLORS.floor,
-  goal: COLORS.goal,
-  wall: COLORS.wall,
-  wallTop: COLORS.wall,
-  wallRight: COLORS.wall,
-  wallBottom: COLORS.wall,
-  wallLeft: COLORS.wall,
-  wallTopLeft: COLORS.wall,
-  wallTopRight: COLORS.wall,
-  wallBottomRight: COLORS.wall,
-  wallBottomLeft: COLORS.wall,
-  box: COLORS.box,
-  boxOnGoal: COLORS.boxDone,
-  player: COLORS.player,
-}
 
 /**
  * The level from level mode, drawn under the skin. Layer order matches what the
@@ -96,7 +73,7 @@ export function createSkinPreviewPainter(
         }
       }
 
-      context.fillStyle = FALLBACK_COLORS[role]
+      context.fillStyle = getRoleColor(role)
       context.fillRect(x, y, tileSize, tileSize)
     }
 

@@ -5,10 +5,11 @@
  * write can fail on quota at any time. Every call is guarded, and a failure is
  * reported rather than thrown — the editor has to keep working unsaved.
  *
- * One key per mode, each written only by the mode that owns that state, so the
- * two never have to coordinate a read-modify-write of a shared record.
+ * One key per owner — the two modes and the publish panel — each written only
+ * by the one that owns that state, so none of them ever has to coordinate a
+ * read-modify-write of a shared record.
  */
-const SLICES = ['level', 'skin'] as const
+const SLICES = ['level', 'skin', 'publish'] as const
 
 export type StoredSlice = (typeof SLICES)[number]
 

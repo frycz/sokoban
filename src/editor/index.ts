@@ -1,5 +1,6 @@
 import { requireElement, type EditorMode } from './dom'
 import { createInitialLevelDocument, createLevelMode } from './level-mode'
+import { createPublishPanel } from './publish'
 import { createSession } from './session'
 import { createSkinMode } from './skin-mode'
 import { clearStoredEditor } from './storage'
@@ -13,10 +14,17 @@ const session = createSession(createInitialLevelDocument())
 
 // One session, two modes: the skin preview renders the level being drawn, so
 // the two panels share the document rather than each holding their own.
+const skinMode = createSkinMode(session)
+
 const modes: Record<ModeName, EditorMode> = {
   level: createLevelMode(session),
-  skin: createSkinMode(session),
+  skin: skinMode,
 }
+
+// Not a mode: a level bundle is the level and the tiles together, so the one
+// control that needs both halves sits in the top bar and is owned here, for the
+// same reason Clear storage is.
+const publishPanel = createPublishPanel(session, skinMode.getSkinExport)
 
 const sections: Record<ModeName, HTMLElement> = {
   level: requireElement<HTMLElement>('#level-mode'),
@@ -63,6 +71,7 @@ requireElement<HTMLButtonElement>('#clear-storage').addEventListener(
       modes[name].reset()
     }
 
+    publishPanel.reset()
     modes[activeMode].update()
   },
 )

@@ -4,7 +4,7 @@ import {
   clampSheetSettings,
   getSheetGrid,
   getSourceTileRect,
-} from './sheet'
+} from '../../render/sheet'
 import { getBoundRoles, getMissingRequiredRoles, type SkinDraft } from './skin'
 
 export type AtlasSize = {

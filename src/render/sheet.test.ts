@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   clampSheetSettings,
-  computeSheetLayout,
   getSheetGrid,
   getSourceTileRect,
-  getTileIndexAtPixel,
   type SheetSettings,
 } from './sheet'
 
@@ -87,59 +85,6 @@ describe('getSourceTileRect', () => {
 
     expect(getSourceTileRect(plain, grid, 8).width).toBe(0)
     expect(getSourceTileRect(plain, grid, -1).width).toBe(0)
-  })
-})
-
-describe('getTileIndexAtPixel', () => {
-  const grid = getSheetGrid(bordered, 99, 66)
-  const layout = { scale: 1, originX: 0, originY: 0 }
-  const at = (x: number, y: number) =>
-    getTileIndexAtPixel(bordered, grid, layout, x, y)
-
-  it('inverts the tile rect it was given', () => {
-    expect(at(1, 1)).toBe(0)
-    expect(at(34, 1)).toBe(1)
-    expect(at(34, 34)).toBe(4)
-  })
-
-  it('selects nothing in a gutter', () => {
-    // x = 33 is the one-pixel gap between the first and second columns.
-    expect(at(33, 10)).toBe(-1)
-  })
-
-  it('selects nothing outside the sheet', () => {
-    expect(at(-5, 10)).toBe(-1)
-    expect(at(500, 10)).toBe(-1)
-  })
-
-  it('accounts for the display scale and origin', () => {
-    expect(
-      getTileIndexAtPixel(
-        bordered,
-        grid,
-        { scale: 2, originX: 10, originY: 10 },
-        10 + 34 * 2,
-        10 + 1 * 2,
-      ),
-    ).toBe(1)
-  })
-})
-
-describe('computeSheetLayout', () => {
-  it('snaps an upscale to a whole number so pixel art stays crisp', () => {
-    expect(computeSheetLayout(64, 64, 200, 200).scale).toBe(3)
-  })
-
-  it('shrinks by a fraction when the sheet is too big', () => {
-    expect(computeSheetLayout(200, 200, 100, 100).scale).toBe(0.5)
-  })
-
-  it('centres the sheet', () => {
-    expect(computeSheetLayout(64, 64, 200, 100)).toEqual({
-      scale: 1,
-      originX: 68,
-      originY: 18,
-    })
   })
 })
 
