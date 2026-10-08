@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sokoban — level editor</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 320px;
+        gap: 16px;
+        padding: 16px;
+        box-sizing: border-box;
+        background: #11131a;
+        color: #c3c9d8;
+        font:
+          14px/1.5 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+      main,
+      aside {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 0;
+        min-width: 0;
+      }
+      #grid {
+        flex: 1 1 auto;
+        min-height: 0;
+        touch-action: none;
+        cursor: crosshair;
+      }
+      h2 {
+        margin: 0;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #7d8699;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: #1d2230;
+        border: 1px solid #2c3444;
+        border-radius: 4px;
+        padding: 5px 10px;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        border-color: #4b5570;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      button[aria-pressed='true'] {
+        background: #2f3a52;
+        border-color: #63a8e0;
+        color: #e8edf7;
+      }
+      .swatch {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        margin-right: 6px;
+        border-radius: 2px;
+        vertical-align: baseline;
+      }
+      input[type='number'] {
+        font: inherit;
+        color: inherit;
+        width: 4.5em;
+        background: #1d2230;
+        border: 1px solid #2c3444;
+        border-radius: 4px;
+        padding: 4px 6px;
+      }
+      textarea {
+        font: inherit;
+        color: inherit;
+        flex: 1 1 auto;
+        min-height: 160px;
+        resize: vertical;
+        white-space: pre;
+        background: #0c0e14;
+        border: 1px solid #2c3444;
+        border-radius: 4px;
+        padding: 8px;
+      }
+      #report p {
+        margin: 0 0 4px;
+      }
+      #report .ok {
+        color: #6faf6a;
+      }
+      #report .error {
+        color: #e07a7a;
+      }
+      #report .warning {
+        color: #d7b36a;
+      }
+      @media (max-width: 760px) {
+        body {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: 60vh auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="row" id="palette">
+        <button type="button" data-brush="wall">
+          <span class="swatch" style="background: #4b5570"></span>1 wall
+        </button>
+        <button type="button" data-brush="floor">
+          <span class="swatch" style="background: #262b38"></span>2 floor
+        </button>
+        <button type="button" data-brush="goal">
+          <span class="swatch" style="background: #6d5a3f"></span>3 goal
+        </button>
+        <button type="button" data-brush="box">
+          <span class="swatch" style="background: #c08552"></span>4 box
+        </button>
+        <button type="button" data-brush="player">
+          <span class="swatch" style="background: #63a8e0"></span>5 player
+        </button>
+      </div>
+      <canvas id="grid"></canvas>
+      <div class="row">
+        <label for="width">w</label>
+        <input id="width" type="number" />
+        <label for="height">h</label>
+        <input id="height" type="number" />
+        <button type="button" id="new">New</button>
+        <button type="button" id="undo">Undo (Z)</button>
+      </div>
+    </main>
+    <aside>
+      <h2>Status</h2>
+      <div id="report"></div>
+      <h2>XSB</h2>
+      <textarea
+        id="xsb"
+        spellcheck="false"
+        placeholder="Paste XSB here, then Load"
+      ></textarea>
+      <div class="row">
+        <button type="button" id="load">Load</button>
+        <button type="button" id="export">Export</button>
+      </div>
+    </aside>
+    <script type="module" src="/src/editor/index.ts"></script>
+  </body>
+</html>

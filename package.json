@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "editor": "vite --port 5174 --open /editor.html",
     "build": "tsc --noEmit && vite build",
+    "build:editor": "tsc --noEmit && vite build --mode editor",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

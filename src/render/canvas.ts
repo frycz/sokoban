@@ -4,16 +4,7 @@ import {
   getPositionY,
 } from '../core/rules'
 import type { Level, LevelState } from '../core/types'
-
-const COLORS = {
-  floor: '#262b38',
-  wall: '#4b5570',
-  wallEdge: '#5e6a88',
-  goal: '#6d5a3f',
-  box: '#c08552',
-  boxDone: '#6faf6a',
-  player: '#63a8e0',
-}
+import { COLORS } from './colors'
 
 export function createRenderer(
   canvas: HTMLCanvasElement,

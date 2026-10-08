@@ -74,7 +74,12 @@ export function parseStringToLevelState(text: string): LevelState {
     )
   }
 
-  const interior = reachableFrom(open, width, height, playerCurrentPosition)
+  const interior = getPositionsReachableFrom(
+    open,
+    width,
+    height,
+    playerCurrentPosition,
+  )
 
   for (const box of boxPositions) {
     if (!interior[box]) {
@@ -95,7 +100,12 @@ export function parseStringToLevelState(text: string): LevelState {
   return { level, playerCurrentPosition, boxPositions }
 }
 
-function reachableFrom(
+/**
+ * Four-way flood fill over the cells marked open, returning a mask of what the
+ * fill touched. Shared with the editor, which uses it to check that a level's
+ * boxes and goals are actually inside the walls with the player.
+ */
+export function getPositionsReachableFrom(
   open: readonly boolean[],
   width: number,
   height: number,
