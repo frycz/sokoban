@@ -42,6 +42,14 @@ export function updateBoxPosition(
   currentBoxPosition: number,
   nextBoxPosition: number,
 ): Set<number> {
+  if (!boxPositions.has(currentBoxPosition)) {
+    throw new Error(`No box to move at position ${currentBoxPosition}`)
+  }
+
+  if (boxPositions.has(nextBoxPosition)) {
+    throw new Error(`Position ${nextBoxPosition} already holds a box`)
+  }
+
   const updatedBoxPositions = new Set(boxPositions)
   updatedBoxPositions.delete(currentBoxPosition)
   updatedBoxPositions.add(nextBoxPosition)
