@@ -1,4 +1,4 @@
-import { getNextPosition } from './rules'
+import { getNextPosition, isPositionValid } from './rules'
 import type { LevelState, PlayerMoveDirection } from './types'
 
 /**
@@ -16,7 +16,7 @@ export function step(
   const { level, playerCurrentPosition, boxPositions } = levelState
 
   const playerNextPosition = getNextPosition(level, playerCurrentPosition, playerMoveDirection)
-  if (playerNextPosition < 0 || level.wallMap[playerNextPosition]) return levelState
+  if (!isPositionValid(level, playerNextPosition)) return levelState
 
   if (!boxPositions.has(playerNextPosition)) {
     return { level, playerCurrentPosition: playerNextPosition, boxPositions }
@@ -24,7 +24,8 @@ export function step(
 
   // Pushing: the cell beyond the box has to be free of both walls and boxes.
   const beyond = getNextPosition(level, playerNextPosition, playerMoveDirection)
-  if (beyond < 0 || level.wallMap[beyond] || boxPositions.has(beyond)) return levelState
+  if (!isPositionValid(level, beyond)) return levelState
+  if (boxPositions.has(beyond)) return levelState
 
   const movedBoxPositions = new Set(boxPositions)
   movedBoxPositions.delete(playerNextPosition)
