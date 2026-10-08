@@ -49,7 +49,9 @@ The host does have three commands, so the tag lives there instead:
 
 ```ts
 type Command =
-  { type: 'move'; playerMoveDirection: PlayerMoveDirection } | { type: 'undo' } | { type: 'reset' }
+  | { type: 'move'; playerMoveDirection: PlayerMoveDirection }
+  | { type: 'undo' }
+  | { type: 'reset' }
 ```
 
 Static data (`Level`) is separated from dynamic data (`LevelState`). The level never changes, so snapshots for undo only copy the player position and the box set.

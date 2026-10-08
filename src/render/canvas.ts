@@ -10,7 +10,9 @@ const COLORS = {
   player: '#63a8e0',
 }
 
-export function createRenderer(canvas: HTMLCanvasElement): (levelState: LevelState) => void {
+export function createRenderer(
+  canvas: HTMLCanvasElement,
+): (levelState: LevelState) => void {
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Canvas 2D context is unavailable')
 
@@ -26,7 +28,9 @@ export function createRenderer(canvas: HTMLCanvasElement): (levelState: LevelSta
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
     context.clearRect(0, 0, cssWidth, cssHeight)
 
-    const tile = Math.floor(Math.min(cssWidth / level.width, cssHeight / level.height))
+    const tile = Math.floor(
+      Math.min(cssWidth / level.width, cssHeight / level.height),
+    )
     const originX = Math.floor((cssWidth - tile * level.width) / 2)
     const originY = Math.floor((cssHeight - tile * level.height) / 2)
     const topLeftOf = (position: number) => ({
@@ -60,7 +64,9 @@ export function createRenderer(canvas: HTMLCanvasElement): (levelState: LevelSta
     for (const box of boxPositions) {
       const { x, y } = topLeftOf(box)
       const padding = tile * 0.14
-      context.fillStyle = level.goalPositions.has(box) ? COLORS.boxDone : COLORS.box
+      context.fillStyle = level.goalPositions.has(box)
+        ? COLORS.boxDone
+        : COLORS.box
       roundedRectanglePath(
         context,
         x + padding,

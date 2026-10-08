@@ -19,7 +19,10 @@ export function updateBoxPosition(
   return updatedBoxPositions
 }
 
-export function isPositionBox(levelState: LevelState, position: number): boolean {
+export function isPositionBox(
+  levelState: LevelState,
+  position: number,
+): boolean {
   return levelState.boxPositions.has(position)
 }
 
@@ -31,7 +34,10 @@ function isPositionPlayer(levelState: LevelState, position: number): boolean {
   return levelState.playerCurrentPosition === position
 }
 
-export function isPositionFree(levelState: LevelState, position: number): boolean {
+export function isPositionFree(
+  levelState: LevelState,
+  position: number,
+): boolean {
   return (
     isPositionValid(levelState.level, position) &&
     !isPositionBox(levelState, position) &&

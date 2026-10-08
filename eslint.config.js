@@ -17,6 +17,7 @@ export default tseslint.config(
     files: ['**/*.ts'],
     rules: {
       'no-undef': 'off',
+      curly: ['error', 'multi-line'],
     },
   },
   {

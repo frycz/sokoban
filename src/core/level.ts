@@ -61,15 +61,21 @@ export function parse(text: string): ParsedLevel {
   if (playerCurrentPosition < 0) throw new Error('Level has no player (@ or +)')
   if (boxPositions.size === 0) throw new Error('Level has no boxes')
   if (boxPositions.size !== goalPositions.size) {
-    throw new Error(`Level has ${boxPositions.size} boxes but ${goalPositions.size} goals`)
+    throw new Error(
+      `Level has ${boxPositions.size} boxes but ${goalPositions.size} goals`,
+    )
   }
 
   const interior = reachableFrom(open, width, height, playerCurrentPosition)
   for (const box of boxPositions) {
-    if (!interior[box]) throw new Error(`Box at ${describe(width, box)} is outside the walls`)
+    if (!interior[box]) {
+      throw new Error(`Box at ${describe(width, box)} is outside the walls`)
+    }
   }
   for (const goal of goalPositions) {
-    if (!interior[goal]) throw new Error(`Goal at ${describe(width, goal)} is outside the walls`)
+    if (!interior[goal]) {
+      throw new Error(`Goal at ${describe(width, goal)} is outside the walls`)
+    }
   }
 
   const wallMap = interior.map((reached) => !reached)
@@ -110,7 +116,9 @@ function reachableFrom(
 
 function trimBlankEdges(lines: string[]): string[] {
   const trimmed = [...lines]
-  while (trimmed.length > 0 && trimmed[trimmed.length - 1].trim() === '') trimmed.pop()
+  while (trimmed.length > 0 && trimmed[trimmed.length - 1].trim() === '') {
+    trimmed.pop()
+  }
   while (trimmed.length > 0 && trimmed[0].trim() === '') trimmed.shift()
   return trimmed
 }

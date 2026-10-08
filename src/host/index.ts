@@ -6,7 +6,9 @@ import { createRenderer } from '../render/canvas'
 import { LEVEL } from './level-data'
 
 type Command =
-  { type: 'move'; playerMoveDirection: PlayerMoveDirection } | { type: 'undo' } | { type: 'reset' }
+  | { type: 'move'; playerMoveDirection: PlayerMoveDirection }
+  | { type: 'undo' }
+  | { type: 'reset' }
 
 const BINDINGS: Record<string, Command> = {
   ArrowUp: { type: 'move', playerMoveDirection: 'up' },
