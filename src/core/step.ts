@@ -1,4 +1,4 @@
-import { getNextPosition, isPositionBox, isPositionValid, updateBoxPosition } from './rules'
+import { getNextPosition, isPositionBox, isPositionFree, updateBoxPosition } from './rules'
 import type { LevelState, PlayerMoveDirection } from './types'
 
 /**
@@ -16,18 +16,17 @@ export function step(
   const { level, playerCurrentPosition, boxPositions } = levelState
   const playerNextPosition = getNextPosition(level, playerCurrentPosition, playerMoveDirection)
 
-  if (!isPositionValid(level, playerNextPosition)) {
-    return levelState
+  if (isPositionFree(levelState, playerNextPosition)) {
+    return { level, playerCurrentPosition: playerNextPosition, boxPositions }
   }
 
   if (!isPositionBox(levelState, playerNextPosition)) {
-    return { level, playerCurrentPosition: playerNextPosition, boxPositions }
+    return levelState
   }
 
   const boxCurrentPosition = playerNextPosition
   const behindTheBoxPosition = getNextPosition(level, playerNextPosition, playerMoveDirection)
-  if (!isPositionValid(level, behindTheBoxPosition)) return levelState
-  if (isPositionBox(levelState, behindTheBoxPosition)) return levelState
+  if (!isPositionFree(levelState, behindTheBoxPosition)) return levelState
 
   return {
     level,

@@ -50,6 +50,24 @@ export function isPositionValid(level: Level, position: number): boolean {
   return isPositionOnMap(level, position) && !isPositionWall(level, position)
 }
 
+/** True if the player currently stands on `position`. */
+export function isPositionPlayer(levelState: LevelState, position: number): boolean {
+  return levelState.playerCurrentPosition === position
+}
+
+/**
+ * True if nothing occupies `position`: a real floor cell with neither a box
+ * nor the player on it. Note that "not free" is not the same as "blocked" —
+ * a cell holding a box is not free, but a box can still be pushed.
+ */
+export function isPositionFree(levelState: LevelState, position: number): boolean {
+  return (
+    isPositionValid(levelState.level, position) &&
+    !isPositionBox(levelState, position) &&
+    !isPositionPlayer(levelState, position)
+  )
+}
+
 /**
  * Flat index of the cell one step in `playerMoveDirection`, or -1 if that
  * leaves the grid. Going through x/y rather than adding +/-1 is what stops a
