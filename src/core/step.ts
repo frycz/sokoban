@@ -24,12 +24,12 @@ export function step(
     return { level, playerCurrentPosition: playerNextPosition, boxPositions }
   }
 
-  const beyond = getNextPosition(level, playerNextPosition, playerMoveDirection)
-  if (!isPositionValid(level, beyond)) return levelState
-  if (isPositionBox(levelState, beyond)) return levelState
+  const behindTheBoxPosition = getNextPosition(level, playerNextPosition, playerMoveDirection)
+  if (!isPositionValid(level, behindTheBoxPosition)) return levelState
+  if (isPositionBox(levelState, behindTheBoxPosition)) return levelState
 
   const movedBoxPositions = new Set(boxPositions)
   movedBoxPositions.delete(playerNextPosition)
-  movedBoxPositions.add(beyond)
+  movedBoxPositions.add(behindTheBoxPosition)
   return { level, playerCurrentPosition: playerNextPosition, boxPositions: movedBoxPositions }
 }
