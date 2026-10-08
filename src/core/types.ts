@@ -10,13 +10,13 @@ export type Level = {
   width: number
   height: number
   /** Indexed by flat position. Non-interior cells count as walls. */
-  walls: boolean[]
-  goals: ReadonlySet<number>
+  wallMap: boolean[]
+  goalPositions: ReadonlySet<number>
 }
 
 /** Everything that changes while playing. Positions are flat indices. */
 export type State = {
   level: Level
-  player: number
-  boxes: ReadonlySet<number>
+  playerPosition: number
+  boxPositions: ReadonlySet<number>
 }

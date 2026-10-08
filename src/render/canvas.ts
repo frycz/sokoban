@@ -19,7 +19,7 @@ export function createRenderer(canvas: HTMLCanvasElement): (state: State) => voi
   if (!context) throw new Error('Canvas 2D context is unavailable')
 
   return function render(state: State): void {
-    const { level, player, boxes } = state
+    const { level, playerPosition, boxPositions } = state
 
     const pixelRatio = window.devicePixelRatio || 1
     const cssWidth = canvas.clientWidth
@@ -38,10 +38,10 @@ export function createRenderer(canvas: HTMLCanvasElement): (state: State) => voi
       y: originY + Math.floor(position / level.width) * tile,
     })
 
-    for (let position = 0; position < level.walls.length; position++) {
+    for (let position = 0; position < level.wallMap.length; position++) {
       const { x, y } = topLeftOf(position)
 
-      if (level.walls[position]) {
+      if (level.wallMap[position]) {
         // Only walls touching the playfield are drawn, so the unreachable
         // void around the level stays empty instead of becoming a slab.
         if (!touchesFloor(level, position)) continue
@@ -55,7 +55,7 @@ export function createRenderer(canvas: HTMLCanvasElement): (state: State) => voi
       context.fillStyle = COLORS.floor
       context.fillRect(x, y, tile, tile)
 
-      if (level.goals.has(position)) {
+      if (level.goalPositions.has(position)) {
         context.fillStyle = COLORS.goal
         context.beginPath()
         context.arc(x + tile / 2, y + tile / 2, tile * 0.16, 0, Math.PI * 2)
@@ -63,10 +63,10 @@ export function createRenderer(canvas: HTMLCanvasElement): (state: State) => voi
       }
     }
 
-    for (const box of boxes) {
+    for (const box of boxPositions) {
       const { x, y } = topLeftOf(box)
       const padding = tile * 0.14
-      context.fillStyle = level.goals.has(box) ? COLORS.boxDone : COLORS.box
+      context.fillStyle = level.goalPositions.has(box) ? COLORS.boxDone : COLORS.box
       roundedRectanglePath(
         context,
         x + padding,
@@ -78,7 +78,7 @@ export function createRenderer(canvas: HTMLCanvasElement): (state: State) => voi
       context.fill()
     }
 
-    const { x, y } = topLeftOf(player)
+    const { x, y } = topLeftOf(playerPosition)
     context.fillStyle = COLORS.player
     context.beginPath()
     context.arc(x + tile / 2, y + tile / 2, tile * 0.33, 0, Math.PI * 2)
@@ -96,7 +96,7 @@ function touchesFloor(level: Level, position: number): boolean {
       const neighbourY = y + offsetY
       if (neighbourX < 0 || neighbourX >= level.width) continue
       if (neighbourY < 0 || neighbourY >= level.height) continue
-      if (!level.walls[neighbourY * level.width + neighbourX]) return true
+      if (!level.wallMap[neighbourY * level.width + neighbourX]) return true
     }
   }
   return false

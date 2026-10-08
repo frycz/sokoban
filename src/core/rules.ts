@@ -25,8 +25,8 @@ export function neighbour(
 }
 
 export function isSolved(state: State): boolean {
-  for (const box of state.boxes) {
-    if (!state.level.goals.has(box)) return false
+  for (const box of state.boxPositions) {
+    if (!state.level.goalPositions.has(box)) return false
   }
   return true
 }

@@ -24,8 +24,17 @@ TypeScript, built with Vite. `npm run dev` to play, `npm run typecheck` to check
 
 ```ts
 type PlayerMoveDirection = 'up' | 'down' | 'left' | 'right'
-type Level = { width: number; height: number; walls: boolean[]; goals: ReadonlySet<number> }
-type State = { level: Level; player: number; boxes: ReadonlySet<number> }
+type Level = {
+  width: number
+  height: number
+  wallMap: boolean[]
+  goalPositions: ReadonlySet<number>
+}
+type State = {
+  level: Level
+  playerPosition: number
+  boxPositions: ReadonlySet<number>
+}
 ```
 
 ### There is no `Action` type
@@ -57,7 +66,7 @@ const x = index % width
 const y = Math.floor(index / width)
 ```
 
-Why: JavaScript `Set` and `Map` compare objects by reference, so `set.has({x, y})` is always false. Numbers are compared by value, so `Set<number>` membership works and is O(1). It also makes `walls` a direct array lookup, and it makes states cheap to hash and compare, which matters if deadlock detection or a solver is added later.
+Why: JavaScript `Set` and `Map` compare objects by reference, so `set.has({x, y})` is always false. Numbers are compared by value, so `Set<number>` membership works and is O(1). It also makes `wallMap` a direct array lookup, and it makes states cheap to hash and compare, which matters if deadlock detection or a solver is added later.
 
 The gotcha: moving `left` from `x === 0` wraps to the end of the previous row instead of going out of bounds. Guarded in one place — `neighbour()` in `rules.ts` converts to x/y, adds the delta, bounds-checks, and converts back, returning -1 when the step leaves the grid. Nothing else in the codebase does index arithmetic on positions.
 
@@ -93,7 +102,7 @@ Keys: arrows or WASD to move, Z or U to undo, R to reset.
 
 ## `render/` — dumb
 
-`createRenderer(canvas)` returns a `render(state): void` that redraws the whole board. Reads `state.level` for walls and goals, and `state.player` and `state.boxes` for the movable pieces. No event listeners, no game logic, no knowledge of history.
+`createRenderer(canvas)` returns a `render(state): void` that redraws the whole board. Reads `level.wallMap` and `level.goalPositions` for the board, and `playerPosition` and `boxPositions` for the movable pieces. No event listeners, no game logic, no knowledge of history.
 
 Full redraw every time is deliberate: it keeps the renderer a pure function of state with nothing to invalidate, and a Sokoban board is small enough that the cost is irrelevant.
 
