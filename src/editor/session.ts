@@ -1,9 +1,11 @@
+import type { CustomTileMode } from '../render/custom-tiles'
 import {
   clearCustomTile,
   clearCustomTiles,
   paintDocument,
   resizeDocument,
   setCustomTile,
+  swapCustomTileMode,
   type Brush,
   type EditorDocument,
 } from './document'
@@ -19,11 +21,16 @@ export type Session = {
   /** Returns whether the document changed. */
   paint: (position: number, brush: Brush) => boolean
   /**
-   * Skin mode's two placement tools. They coalesce per stroke like `paint`,
+   * Skin mode's three placement tools. They coalesce per stroke like `paint`,
    * because placing custom tiles is the same dragging gesture.
    */
-  placeCustomTile: (position: number, tileIndex: number) => boolean
+  placeCustomTile: (
+    position: number,
+    tileIndex: number,
+    mode: CustomTileMode,
+  ) => boolean
   eraseCustomTile: (position: number) => boolean
+  swapCustomTileMode: (position: number) => boolean
   /** Every placement at once — what a new or re-sliced sheet invalidates. */
   eraseAllCustomTiles: () => boolean
   resize: (width: number, height: number) => boolean
@@ -72,12 +79,20 @@ export function createSession(initial: EditorDocument): Session {
     return stroke(paintDocument(current(), position, brush))
   }
 
-  function placeCustomTile(position: number, tileIndex: number): boolean {
-    return stroke(setCustomTile(current(), position, tileIndex))
+  function placeCustomTile(
+    position: number,
+    tileIndex: number,
+    mode: CustomTileMode,
+  ): boolean {
+    return stroke(setCustomTile(current(), position, tileIndex, mode))
   }
 
   function eraseCustomTile(position: number): boolean {
     return stroke(clearCustomTile(current(), position))
+  }
+
+  function swapMode(position: number): boolean {
+    return stroke(swapCustomTileMode(current(), position))
   }
 
   function eraseAllCustomTiles(): boolean {
@@ -124,6 +139,7 @@ export function createSession(initial: EditorDocument): Session {
     paint,
     placeCustomTile,
     eraseCustomTile,
+    swapCustomTileMode: swapMode,
     eraseAllCustomTiles,
     resize,
     replace: commit,

@@ -1,12 +1,7 @@
 import { parseStringToLevelState } from '../core/level'
 import type { Level, LevelState } from '../core/types'
-import {
-  createSkin,
-  parseCustomTileMap,
-  parseSkinManifest,
-  type CustomTileMap,
-  type Skin,
-} from '../render/skin'
+import { parseCustomTileMap, type CustomTileMap } from '../render/custom-tiles'
+import { createSkin, parseSkinManifest, type Skin } from '../render/skin'
 import { LEVEL } from './level-data'
 
 /** A level the picker can offer: parsed, so it is known to be playable. */

@@ -4,11 +4,13 @@ import {
   clearCustomTile,
   clearCustomTiles,
   createEmptyDocument,
+  isCellOverwritten,
   MAX_DOCUMENT_SIZE,
   MIN_DOCUMENT_SIZE,
   paintDocument,
   resizeDocument,
   setCustomTile,
+  swapCustomTileMode,
 } from './document'
 import { formatDocumentAsXsb, parseXsbToDocument } from './xsb'
 
@@ -102,15 +104,22 @@ describe('resizeDocument', () => {
 
   it('keeps every custom tile on its own cell when the width changes', () => {
     const start = setCustomTile(
-      setCustomTile(createEmptyDocument(4, 4), positionOf(4, 3, 0), 7),
+      setCustomTile(createEmptyDocument(4, 4), positionOf(4, 3, 0), 7, 'onTop'),
       positionOf(4, 1, 2),
       9,
+      'overwrite',
     )
 
     const widened = resizeDocument(start, 6, 4)
 
-    expect(widened.customTiles.get(positionOf(6, 3, 0))).toBe(7)
-    expect(widened.customTiles.get(positionOf(6, 1, 2))).toBe(9)
+    expect(widened.customTiles.get(positionOf(6, 3, 0))).toEqual({
+      tileIndex: 7,
+      mode: 'onTop',
+    })
+    expect(widened.customTiles.get(positionOf(6, 1, 2))).toEqual({
+      tileIndex: 9,
+      mode: 'overwrite',
+    })
     expect(widened.customTiles.size).toBe(2)
   })
 
@@ -119,6 +128,7 @@ describe('resizeDocument', () => {
       createEmptyDocument(6, 6),
       positionOf(6, 5, 5),
       7,
+      'onTop',
     )
 
     expect(resizeDocument(start, 4, 4).customTiles.size).toBe(0)
@@ -130,28 +140,62 @@ describe('custom tiles', () => {
   const middle = positionOf(3, 1, 1)
 
   it('places a tile on one cell and takes it off again', () => {
-    const placed = setCustomTile(start, middle, 7)
+    const placed = setCustomTile(start, middle, 7, 'onTop')
 
-    expect(placed.customTiles.get(middle)).toBe(7)
+    expect(placed.customTiles.get(middle)).toEqual({
+      tileIndex: 7,
+      mode: 'onTop',
+    })
     expect(clearCustomTile(placed, middle).customTiles.size).toBe(0)
   })
 
   it('leaves the cells alone, so a placement is art and not level structure', () => {
-    expect(setCustomTile(start, middle, 7).cells).toBe(start.cells)
+    expect(setCustomTile(start, middle, 7, 'overwrite').cells).toBe(start.cells)
   })
 
   it('returns the same document when nothing would change', () => {
-    const placed = setCustomTile(start, middle, 7)
+    const placed = setCustomTile(start, middle, 7, 'onTop')
 
-    expect(setCustomTile(placed, middle, 7)).toBe(placed)
+    expect(setCustomTile(placed, middle, 7, 'onTop')).toBe(placed)
     expect(clearCustomTile(start, middle)).toBe(start)
     expect(clearCustomTiles(start)).toBe(start)
   })
 
+  it('counts a changed mode as a change, with the same tile', () => {
+    const placed = setCustomTile(start, middle, 7, 'onTop')
+    const overwriting = setCustomTile(placed, middle, 7, 'overwrite')
+
+    expect(overwriting).not.toBe(placed)
+    expect(isCellOverwritten(overwriting, middle)).toBe(true)
+  })
+
   it('refuses a position off the grid and an index that is not one', () => {
-    expect(setCustomTile(start, -1, 7)).toBe(start)
-    expect(setCustomTile(start, 9, 7)).toBe(start)
-    expect(setCustomTile(start, middle, -1)).toBe(start)
-    expect(setCustomTile(start, middle, 1.5)).toBe(start)
+    expect(setCustomTile(start, -1, 7, 'onTop')).toBe(start)
+    expect(setCustomTile(start, 9, 7, 'onTop')).toBe(start)
+    expect(setCustomTile(start, middle, -1, 'onTop')).toBe(start)
+    expect(setCustomTile(start, middle, 1.5, 'onTop')).toBe(start)
+  })
+})
+
+describe('swapCustomTileMode', () => {
+  const start = createEmptyDocument(3, 3)
+  const middle = positionOf(3, 1, 1)
+
+  it('flips the mode both ways and leaves the tile alone', () => {
+    const placed = setCustomTile(start, middle, 7, 'onTop')
+    const overwriting = swapCustomTileMode(placed, middle)
+
+    expect(overwriting.customTiles.get(middle)).toEqual({
+      tileIndex: 7,
+      mode: 'overwrite',
+    })
+    expect(
+      swapCustomTileMode(overwriting, middle).customTiles.get(middle),
+    ).toEqual({ tileIndex: 7, mode: 'onTop' })
+  })
+
+  it('returns the same document for a cell with no tile placed', () => {
+    expect(swapCustomTileMode(start, middle)).toBe(start)
+    expect(swapCustomTileMode(start, -1)).toBe(start)
   })
 })

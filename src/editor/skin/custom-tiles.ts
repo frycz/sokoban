@@ -1,26 +1,33 @@
+import type {
+  CustomTileMap,
+  CustomTilePlacement,
+} from '../../render/custom-tiles'
 import type { CustomTiles } from '../document'
 import { getBoundRoles, type SkinDraft } from './skin'
 
 /**
  * How the hand-placed tiles leave the editor: extra columns on the end of the
- * atlas, and a map from cell to column.
+ * atlas, and a placement per cell pointing at one of them.
  *
- * A placement in the draft names a tile in the loaded sheet, which the game
+ * A placement in the document names a tile in the loaded sheet, which the game
  * never sees — it only ever has the packed atlas. So the export turns sheet
  * indices into atlas columns, one column per distinct tile however many cells
  * use it, appended after the role columns so `roles[n]` still describes column
  * `n` and the manifest does not have to grow a second list.
+ *
+ * The mode is not translated, only carried: it means the same thing to the game
+ * renderer as it does to the preview.
  */
 export type CustomTilePacking = {
   /** Sheet tile indices to append to the atlas, in column order. */
   readonly sheetTileIndices: readonly number[]
-  /** Level position → atlas column. */
-  readonly columnOfPosition: ReadonlyMap<number, number>
+  /** Level position → what the game will draw there. */
+  readonly placementOfPosition: CustomTileMap
 }
 
 const NO_CUSTOM_TILE_PACKING: CustomTilePacking = {
   sheetTileIndices: [],
-  columnOfPosition: new Map(),
+  placementOfPosition: new Map(),
 }
 
 /**
@@ -38,7 +45,8 @@ export function packCustomTiles(
   tileCount: number,
 ): CustomTilePacking {
   const usable = [...customTiles].filter(
-    ([, tileIndex]) => tileIndex >= 0 && tileIndex < tileCount,
+    ([, customTile]) =>
+      customTile.tileIndex >= 0 && customTile.tileIndex < tileCount,
   )
 
   if (usable.length === 0) {
@@ -46,7 +54,7 @@ export function packCustomTiles(
   }
 
   const sheetTileIndices = [
-    ...new Set(usable.map(([, tileIndex]) => tileIndex)),
+    ...new Set(usable.map(([, customTile]) => customTile.tileIndex)),
   ].sort((one, other) => one - other)
 
   const firstColumn = getBoundRoles(draft).length
@@ -59,10 +67,13 @@ export function packCustomTiles(
 
   return {
     sheetTileIndices,
-    columnOfPosition: new Map(
-      usable.map(([position, tileIndex]) => [
+    placementOfPosition: new Map(
+      usable.map(([position, customTile]): [number, CustomTilePlacement] => [
         position,
-        columnOfSheetTileIndex.get(tileIndex)!,
+        {
+          column: columnOfSheetTileIndex.get(customTile.tileIndex)!,
+          mode: customTile.mode,
+        },
       ]),
     ),
   }
@@ -83,10 +94,23 @@ export function formatCustomTilesFile(
       width,
       height,
       tiles: Object.fromEntries(
-        [...packing.columnOfPosition].sort(([one], [other]) => one - other),
+        [...packing.placementOfPosition].sort(([one], [other]) => one - other),
       ),
     },
     null,
     2,
   )}\n`
+}
+
+/** How many of the placements replace the skin rather than sit over it. */
+export function countOverwrites(customTiles: CustomTiles): number {
+  let count = 0
+
+  for (const customTile of customTiles.values()) {
+    if (customTile.mode === 'overwrite') {
+      count++
+    }
+  }
+
+  return count
 }

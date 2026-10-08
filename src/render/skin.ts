@@ -165,60 +165,6 @@ export function getSkinColumnRect(
   return rect.width === 0 ? null : rect
 }
 
-/**
- * A bundle's `tiles.json`: level position → atlas column, for the cells whose
- * art the author placed by hand instead of leaving to the skin.
- */
-export type CustomTileMap = ReadonlyMap<number, number>
-
-/**
- * Field by field like the manifest, and checked against the level rather than
- * trusted: a position is an index into one grid, so a file counted against a
- * different width would draw every tile on the wrong cell. Mismatched
- * dimensions are a broken bundle, not a file to guess at, so this returns null
- * and the caller says so out loud.
- */
-export function parseCustomTileMap(
-  value: unknown,
-  width: number,
-  height: number,
-): CustomTileMap | null {
-  if (typeof value !== 'object' || value === null) {
-    return null
-  }
-
-  const record = value as Record<string, unknown>
-
-  if (record.width !== width || record.height !== height) {
-    return null
-  }
-
-  if (typeof record.tiles !== 'object' || record.tiles === null) {
-    return null
-  }
-
-  const cellCount = width * height
-  const customTiles = new Map<number, number>()
-
-  for (const [key, column] of Object.entries(
-    record.tiles as Record<string, unknown>,
-  )) {
-    const position = Number(key)
-
-    if (!Number.isInteger(position) || position < 0 || position >= cellCount) {
-      return null
-    }
-
-    if (typeof column !== 'number' || !Number.isInteger(column) || column < 0) {
-      return null
-    }
-
-    customTiles.set(position, column)
-  }
-
-  return customTiles
-}
-
 function readNumber(value: unknown): number {
   return typeof value === 'number' ? value : Number.NaN
 }

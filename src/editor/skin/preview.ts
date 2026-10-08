@@ -1,7 +1,12 @@
 import { getSheetGrid, getSourceTileRect } from '../../render/sheet'
 import { getRoleColor } from '../../render/skin'
 import { getBaseRole, type TileRole } from '../../render/tile-roles'
-import { getCellX, getCellY, type EditorDocument } from '../document'
+import {
+  getCellX,
+  getCellY,
+  isCellOverwritten,
+  type EditorDocument,
+} from '../document'
 import { computeGridLayout } from '../layout'
 import { getWallRoleAt } from './roles'
 import { isRoleBound, type SkinDraft } from './skin'
@@ -132,6 +137,15 @@ export function createSkinPreviewPainter(
         continue
       }
 
+      // An overwriting placement means this cell is the placed tile and nothing
+      // else, so none of the skin's layers go down first — which is what makes
+      // a transparent tile a hole rather than a window onto the floor. Only
+      // while the placements are being shown: hiding them has to give the skin
+      // back, not leave gaps.
+      if (view.showCustomTiles && isCellOverwritten(editorDocument, position)) {
+        continue
+      }
+
       // Floor first on every cell the board occupies, walls included: it is one
       // layer under the level and every other tile composites over it.
       drawRole('floor', x, y)
@@ -159,10 +173,10 @@ export function createSkinPreviewPainter(
     // hand is the author saying what that cell looks like, which outranks both
     // the skin's answer and the board's own silhouette.
     if (view.showCustomTiles) {
-      for (const [position, tileIndex] of editorDocument.customTiles) {
+      for (const [position, customTile] of editorDocument.customTiles) {
         const { x, y } = topLeftOf(position)
 
-        if (!drawSheetTile(tileIndex, x, y)) {
+        if (!drawSheetTile(customTile.tileIndex, x, y)) {
           // The sheet is gone or the index is off it — a placement with no art
           // yet. An outline rather than nothing, so it can still be erased.
           context.strokeStyle = getRoleColor('goal')

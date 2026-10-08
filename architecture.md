@@ -11,7 +11,7 @@ src/core/       types.ts, level.ts, step.ts, rules.ts   pure, no DOM, no I/O
 src/host/       index.ts, history.ts, levels.ts,        picker, history stack,
                 level-data.ts                           keybindings, dispatch
 src/render/     canvas.ts, colors.ts, tile-roles.ts,    (state) => draw
-                sheet.ts, skin.ts
+                sheet.ts, skin.ts, custom-tiles.ts
 src/editor/     document.ts, xsb.ts, validate.ts,       level mode, same pure/shell/draw split
                 session.ts, layout.ts, canvas.ts,       plus autosave:
                 level-mode.ts, dom.ts, index.ts,        stored-state.ts, autosave.ts,
@@ -157,13 +157,14 @@ Keys: arrows or WASD to move, Z or U to undo, R to reset, Escape for the level l
 
 Full redraw every time is deliberate: it keeps the renderer a pure function of state with nothing to invalidate, and a Sokoban board is small enough that the cost is irrelevant.
 
-| File            | Role                                                                                                                                        |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canvas.ts`     | the two painters — tiles when there is a skin, flat colour when there is not                                                                |
-| `colors.ts`     | the palette, a leaf                                                                                                                         |
-| `tile-roles.ts` | `ROLE_ORDER`, `TileRole`, and the wall classifier, a leaf                                                                                   |
-| `sheet.ts`      | how to cut a grid of tiles out of an image. Pure                                                                                            |
-| `skin.ts`       | a manifest parsed, bound to its atlas, and resolved to a rect per role — or per column, for the custom tiles. Also reads `tiles.json`. Pure |
+| File              | Role                                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `canvas.ts`       | the two painters — tiles when there is a skin, flat colour when there is not                                       |
+| `colors.ts`       | the palette, a leaf                                                                                                |
+| `tile-roles.ts`   | `ROLE_ORDER`, `TileRole`, and the wall classifier, a leaf                                                          |
+| `sheet.ts`        | how to cut a grid of tiles out of an image. Pure                                                                   |
+| `skin.ts`         | a manifest parsed, bound to its atlas, and resolved to a rect per role — or per column, for the custom tiles. Pure |
+| `custom-tiles.ts` | the `tiles.json` format: the mode, the placement, and the reader. A leaf                                           |
 
 ### The skin lives in `render/`, not in the editor
 
@@ -228,7 +229,14 @@ there. That is the opposite of what a binding is, and the two live in different
 places for that reason.
 
 ```json
-{ "width": 16, "height": 12, "tiles": { "34": 6, "35": 7 } }
+{
+  "width": 16,
+  "height": 12,
+  "tiles": {
+    "34": { "column": 6, "mode": "onTop" },
+    "35": { "column": 7, "mode": "overwrite" }
+  }
+}
 ```
 
 It is level data: `EditorDocument` carries a `customTiles` map beside its
@@ -250,6 +258,41 @@ names column `n`; the custom columns have no name, which is why
 They ship with the skin rather than beside the level because what they name is
 columns in that atlas. A bundle with `tiles.json` and no usable skin has nothing
 for them to index, and `host/levels.ts` says so and plays without them.
+
+`render/custom-tiles.ts` is where the format itself lives — the mode, the
+placement, and the reader — as a leaf that imports nothing, like `colors.ts` and
+`tile-roles.ts`. Both sides need the vocabulary and neither may depend on the
+other: the editor authors a placement and writes the file, the game reads it and
+draws it.
+
+#### On top or overwrite is the cell's choice, not the tile's
+
+`onTop` composites the placed tile over the cell's usual stack, so transparency
+shows the floor — or the box standing there — through it. `overwrite` draws the
+cell from nothing but the placed tile, so transparency is a hole in the board
+rather than a window onto the skin. For an opaque tile the two are
+indistinguishable, which is exactly why the format cannot infer it and the author
+has to say.
+
+It is per cell rather than per tile, so two cells can share one atlas column and
+still do different things to what is under them. That costs nothing in the atlas
+— the column is the art, the mode is the cell's — and it is what lets one plant
+sprite sit on grass in one place and punch through the wall in another.
+
+In the editor the mode switch sets what the **place tile** tool writes, and
+**4 swap mode** flips a placement that already exists, leaving its tile alone.
+A fourth tool rather than folding it into `place`, because re-stamping a cell to
+change its mode would need the original tile still selected and would quietly
+replace the art if it were not.
+
+Swapping is the one placement tool that is not idempotent, which is why the drag
+handler only applies a tool when the pointer crosses into a new cell: a pointer
+trembling inside one cell would otherwise flip it back and forth.
+
+Both renderers skip a cell's skin layers when it is overwritten — the board loop,
+the box loop and the player, since the placement outranks all three. The preview
+does it only while the placements are being shown, because hiding them has to
+give the skin back rather than leave gaps.
 
 #### A position is an index into one grid
 
@@ -458,7 +501,7 @@ The game renderer resolves a sprite from state — it never sees a cell's identi
 
 Because a level need not contain every role — there is nothing to click if it has no goals — the role list in the sidebar is a second drop target for the same action. The palette selection is the brush; the preview and the role list are both places to apply it.
 
-The **place tile** and **erase tile** tools are the way out of that: one cell, one tile, over whatever the skin decided. That is per-cell art, which is level data rather than skin data, and it lives on the document — see "Custom tiles are the level's, not the skin's".
+The **place tile**, **erase tile** and **swap mode** tools are the way out of that: one cell, one tile, over or instead of whatever the skin decided. That is per-cell art, which is level data rather than skin data, and it lives on the document — see "Custom tiles are the level's, not the skin's".
 
 ### Fourteen roles: six required, eight optional
 

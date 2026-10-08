@@ -1,5 +1,5 @@
 import { ROLE_ORDER, type TileRole } from '../render/tile-roles'
-import type { CustomTiles, EditorDocument } from './document'
+import type { CustomTile, CustomTiles, EditorDocument } from './document'
 import { clampSheetSettings, type SheetSettings } from '../render/sheet'
 import {
   UNBOUND,
@@ -32,7 +32,7 @@ export type StoredSkin = {
  * blank and the round trip is exact.
  *
  * The custom tiles ride alongside rather than inside, because XSB has nowhere to
- * put them: a flat position for the cell, a sheet tile index for the art.
+ * put them: a flat position for the cell, and the placement for the art.
  */
 export function encodeStoredLevel(editorDocument: EditorDocument): string {
   return JSON.stringify({
@@ -69,25 +69,34 @@ export function decodeStoredLevel(text: string | null): EditorDocument | null {
 /**
  * A record written before custom tiles existed simply has none, which is why the
  * stored version did not have to move: the field's absence already means the
- * right thing. Anything out of the level's bounds or not a tile index is
- * dropped, the same way a nonsense binding comes back unbound.
+ * right thing. Anything out of the level's bounds or not a placement is dropped,
+ * the same way a nonsense binding comes back unbound.
+ *
+ * A bare number is what the first build of this feature wrote, before a
+ * placement grew a mode. Read as `onTop`, which is what it drew.
  */
 function readCustomTiles(value: unknown, cellCount: number): CustomTiles {
   const stored = readObject(value)
-  const customTiles = new Map<number, number>()
+  const customTiles = new Map<number, CustomTile>()
 
-  for (const [key, tileIndex] of Object.entries(stored)) {
+  for (const [key, entry] of Object.entries(stored)) {
     const position = Number(key)
 
     if (!Number.isInteger(position) || position < 0 || position >= cellCount) {
       continue
     }
 
-    const index = readTileIndex(tileIndex)
+    const record = typeof entry === 'number' ? { tileIndex: entry } : entry
+    const tileIndex = readTileIndex(readObject(record).tileIndex)
 
-    if (index !== UNBOUND) {
-      customTiles.set(position, index)
+    if (tileIndex === UNBOUND) {
+      continue
     }
+
+    customTiles.set(position, {
+      tileIndex,
+      mode: readObject(record).mode === 'overwrite' ? 'overwrite' : 'onTop',
+    })
   }
 
   return customTiles

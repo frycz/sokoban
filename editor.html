@@ -70,13 +70,19 @@
         touch-action: pan-x pan-y;
         cursor: crosshair;
       }
-      /* The two visibility switches read as one group, set apart from the
-         tools: they change what the preview shows, not what a click does. */
-      #preview-tools .shows {
+      /* The two visibility switches read as one group, set apart from what the
+         tools do: they change what the preview shows, not what a click does. */
+      #preview-options .shows {
         display: flex;
         gap: 10px;
         align-items: center;
         margin-left: auto;
+        color: #7d8699;
+        font-size: 12px;
+      }
+      /* The mode buttons are a property of the place tool rather than tools of
+         their own, so the row says what they apply to. */
+      #preview-options .caption {
         color: #7d8699;
         font-size: 12px;
       }
@@ -349,6 +355,30 @@
             title="Click or drag to take placed tiles off again"
           >
             3 erase tile
+          </button>
+          <button
+            type="button"
+            data-tool="swap"
+            title="Click or drag over placed tiles to flip on top ⇄ overwrite, leaving the tile alone"
+          >
+            4 swap mode
+          </button>
+        </div>
+        <div class="row" id="preview-options">
+          <span class="caption">new tile</span>
+          <button
+            type="button"
+            data-place-mode="onTop"
+            title="The skin still draws under the placed tile, so transparency shows it through"
+          >
+            on top
+          </button>
+          <button
+            type="button"
+            data-place-mode="overwrite"
+            title="The skin does not draw at all on that cell, so transparency is a hole"
+          >
+            overwrite
           </button>
           <span class="shows">
             <label for="show-skin-tiles">

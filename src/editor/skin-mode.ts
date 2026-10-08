@@ -1,3 +1,4 @@
+import type { CustomTileMode } from '../render/custom-tiles'
 import type { LevelAutosave } from './autosave'
 import {
   requireElement,
@@ -13,6 +14,7 @@ import { readStoredText, writeStoredText } from './storage'
 import { decodeStoredSkin, encodeStoredSkin } from './stored-state'
 import { getAtlasSize, packSkinAtlas } from './skin/atlas'
 import {
+  countOverwrites,
   formatCustomTilesFile,
   packCustomTiles,
   type CustomTilePacking,
@@ -76,15 +78,21 @@ const ROLE_GROUPS: readonly {
 
 /**
  * What a click on the preview means. Binding a role is the skin's own gesture —
- * every wall changes at once — and the other two are the escape hatch from it:
- * one cell, one tile, whatever the skin would have drawn there.
+ * every wall changes at once — and the other three are the escape hatch from
+ * it: one cell, one tile, whatever the skin would have drawn there.
+ *
+ * `swap` is how the on-top / overwrite choice is changed after the fact. It
+ * exists as its own tool rather than being folded into `place` because
+ * re-stamping a cell to change its mode would need the original tile still
+ * selected, and would quietly replace the art if it were not.
  */
-type PreviewTool = 'bind' | 'place' | 'erase'
+type PreviewTool = 'bind' | 'place' | 'erase' | 'swap'
 
 const TOOL_OF_KEY: Record<string, PreviewTool | undefined> = {
   '1': 'bind',
   '2': 'place',
   '3': 'erase',
+  '4': 'swap',
 }
 
 /**
@@ -120,6 +128,7 @@ export function createSkinMode(
   const zoomLevel = requireElement<HTMLElement>('#zoom-level')
   const previewCanvas = requireElement<HTMLCanvasElement>('#skin-preview')
   const previewTools = requireElement<HTMLElement>('#preview-tools')
+  const previewOptions = requireElement<HTMLElement>('#preview-options')
   const showSkinTilesInput =
     requireElement<HTMLInputElement>('#show-skin-tiles')
   const showCustomTilesInput =
@@ -142,6 +151,10 @@ export function createSkinMode(
   // draft — the same deal the level panel's selected brush gets.
   let paletteZoom = 1
   let previewTool: PreviewTool = 'bind'
+  // What the place tool writes. Each cell keeps its own copy, so changing this
+  // affects the next placement and never one already made — those are the swap
+  // tool's job.
+  let placeMode: CustomTileMode = 'onTop'
   let showSkinTiles = true
   let showCustomTiles = true
   let hoverPosition = -1
@@ -326,18 +339,25 @@ export function createSkinMode(
    * the two visibility switches mean the preview can be showing none of them.
    */
   function renderCustomTileReport(): void {
-    const placed = session.current().customTiles.size
+    const { customTiles } = session.current()
+    const placed = customTiles.size
 
     if (previewTool === 'place' && selectedTileIndex === UNBOUND) {
       setMessage('Pick a tile from the sheet to place.', 'error')
     }
 
     if (placed === 0) {
+      if (previewTool === 'swap') {
+        setMessage('No custom tiles to swap yet.', 'warning')
+      }
+
       return
     }
 
+    const overwrites = countOverwrites(customTiles)
+
     setMessage(
-      `${placed} custom ${placed === 1 ? 'tile' : 'tiles'} placed${showCustomTiles ? '' : ' — hidden'}.`,
+      `${placed} custom ${placed === 1 ? 'tile' : 'tiles'} placed, ${overwrites} overwriting the skin${showCustomTiles ? '' : ' — hidden'}.`,
       showCustomTiles ? 'ok' : 'warning',
     )
   }
@@ -347,6 +367,15 @@ export function createSkinMode(
       button.setAttribute(
         'aria-pressed',
         String(button.getAttribute('data-tool') === previewTool),
+      )
+    }
+
+    for (const button of previewOptions.querySelectorAll(
+      'button[data-place-mode]',
+    )) {
+      button.setAttribute(
+        'aria-pressed',
+        String(button.getAttribute('data-place-mode') === placeMode),
       )
     }
   }
@@ -493,6 +522,7 @@ export function createSkinMode(
     selectedTileIndex = UNBOUND
     paletteZoom = 1
     previewTool = 'bind'
+    placeMode = 'onTop'
     showSkinTiles = true
     showCustomTiles = true
     showSkinTilesInput.checked = true
@@ -658,13 +688,21 @@ export function createSkinMode(
     )
   }
 
-  /** Returns whether the document changed, so a drag only redraws when it did. */
+  /**
+   * Returns whether the document changed, so a drag only redraws when it did.
+   * Reached only for the three placement tools: binding is a click, not a
+   * stroke, and the pointer handler splits it off before here.
+   */
   function applyPlacementTool(position: number): boolean {
     if (previewTool === 'erase') {
       return session.eraseCustomTile(position)
     }
 
-    return session.placeCustomTile(position, selectedTileIndex)
+    if (previewTool === 'swap') {
+      return session.swapCustomTileMode(position)
+    }
+
+    return session.placeCustomTile(position, selectedTileIndex, placeMode)
   }
 
   function selectTool(tool: PreviewTool): void {
@@ -710,15 +748,20 @@ export function createSkinMode(
     const hasMoved = position !== hoverPosition
     hoverPosition = position
 
+    if (!hasMoved) {
+      return
+    }
+
+    // Only on a move onto a new cell, never on every event. Placing and erasing
+    // are idempotent and would not have cared, but swapping a mode is not: a
+    // pointer trembling inside one cell would flip it back and forth.
     if (isPlacing && applyPlacementTool(position)) {
       update()
 
       return
     }
 
-    if (hasMoved) {
-      paintPreviewOnly()
-    }
+    paintPreviewOnly()
   })
 
   previewCanvas.addEventListener('pointerup', () => {
@@ -738,6 +781,17 @@ export function createSkinMode(
 
     if (tool) {
       selectTool(tool as PreviewTool)
+    }
+  })
+
+  previewOptions.addEventListener('click', (event) => {
+    const mode = (event.target as Element)
+      .closest('button[data-place-mode]')
+      ?.getAttribute('data-place-mode')
+
+    if (mode) {
+      placeMode = mode as CustomTileMode
+      update()
     }
   })
 
@@ -840,7 +894,7 @@ export function createSkinMode(
         packing.sheetTileIndices,
       ).toDataURL('image/png'),
       customTiles:
-        packing.columnOfPosition.size === 0
+        packing.placementOfPosition.size === 0
           ? null
           : formatCustomTilesFile(
               editorDocument.width,

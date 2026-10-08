@@ -5,11 +5,11 @@ import {
 } from '../core/rules'
 import type { Level, LevelState } from '../core/types'
 import { COLORS } from './colors'
+import type { CustomTileMap } from './custom-tiles'
 import {
   getRoleColor,
   getSkinColumnRect,
   getSkinTileRect,
-  type CustomTileMap,
   type Skin,
 } from './skin'
 import { getWallRole, type TileRole } from './tile-roles'
@@ -140,12 +140,22 @@ function drawSkinnedBoard(
     )
   }
 
+  // A cell the author chose to overwrite is the placed tile and nothing else,
+  // so none of the skin's layers go down under it — which is what makes a
+  // transparent tile a hole in the board rather than a window onto the floor.
+  const isOverwritten = (position: number): boolean =>
+    customTiles?.get(position)?.mode === 'overwrite'
+
   for (let position = 0; position < level.wallMap.length; position++) {
     const isWall = level.wallMap[position]
 
     // Outside the level nothing is drawn at all, not even floor, so a skin
     // never has to supply art for it and the board keeps its silhouette.
     if (isWall && !touchesFloor(level, position)) {
+      continue
+    }
+
+    if (isOverwritten(position)) {
       continue
     }
 
@@ -163,12 +173,18 @@ function drawSkinnedBoard(
   }
 
   for (const box of boxPositions) {
+    if (isOverwritten(box)) {
+      continue
+    }
+
     const { x, y } = getTopLeft(level, layout, box)
     drawRole(level.goalPositions.has(box) ? 'boxOnGoal' : 'box', x, y)
   }
 
-  const player = getTopLeft(level, layout, playerCurrentPosition)
-  drawRole('player', player.x, player.y)
+  if (!isOverwritten(playerCurrentPosition)) {
+    const player = getTopLeft(level, layout, playerCurrentPosition)
+    drawRole('player', player.x, player.y)
+  }
 
   if (!customTiles) {
     return
@@ -177,12 +193,12 @@ function drawSkinnedBoard(
   // Last, over everything, and over the cells the silhouette culled too: the
   // author said what this cell looks like, which outranks both the skin's answer
   // and the board's own outline.
-  for (const [position, column] of customTiles) {
+  for (const [position, placement] of customTiles) {
     if (position >= level.wallMap.length) {
       continue
     }
 
-    const rect = getSkinColumnRect(skin, column)
+    const rect = getSkinColumnRect(skin, placement.column)
 
     if (!rect) {
       continue

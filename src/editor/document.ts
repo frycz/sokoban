@@ -1,4 +1,5 @@
 import { getPositionFromCoordinates } from '../core/rules'
+import type { CustomTileMode } from '../render/custom-tiles'
 
 /** What sits on a floor cell. A wall always holds nothing. */
 type CellContent = 'empty' | 'box' | 'player'
@@ -10,15 +11,28 @@ export type Cell = {
 }
 
 /**
- * Position → tile index in the sheet skin mode has loaded, for the cells whose
- * art the author has placed by hand instead of letting the skin decide.
+ * A tile the author put on one cell: which tile of the sheet skin mode has
+ * loaded, and whether the skin still draws under it.
+ *
+ * The index is the editor's own currency and the game never sees it — the
+ * export turns it into an atlas column — but the mode travels all the way
+ * through, which is why its type is the one the bundle format uses.
+ */
+export type CustomTile = {
+  readonly tileIndex: number
+  readonly mode: CustomTileMode
+}
+
+/**
+ * Position → placement, for the cells whose art the author has placed by hand
+ * instead of letting the skin decide.
  *
  * It is level data that names skin data. The placement belongs to the level the
  * way a wall does — it survives a resize and rides on the undo stack — but the
  * index only means something against the sheet it was picked from, which is why
  * loading or re-slicing a sheet clears it exactly as it clears the bindings.
  */
-export type CustomTiles = ReadonlyMap<number, number>
+export type CustomTiles = ReadonlyMap<number, CustomTile>
 
 export const NO_CUSTOM_TILES: CustomTiles = new Map()
 
@@ -168,9 +182,9 @@ export function paintDocument(
 
 /**
  * A tile placed by hand on one cell, over whatever the skin would have drawn
- * there. Returns the same document when that cell already holds that tile, so a
- * drag across a row of already-placed cells records nothing — the identity
- * contract `paintDocument` has.
+ * there. Returns the same document when that cell already holds exactly that
+ * placement, so a drag across a row of already-placed cells records nothing —
+ * the identity contract `paintDocument` has.
  *
  * A negative index is ignored rather than stored: it is what "no tile is
  * selected" looks like in skin mode, and `UNBOUND` is not a placement.
@@ -179,6 +193,7 @@ export function setCustomTile(
   editorDocument: EditorDocument,
   position: number,
   tileIndex: number,
+  mode: CustomTileMode,
 ): EditorDocument {
   if (position < 0 || position >= editorDocument.cells.length) {
     return editorDocument
@@ -188,12 +203,39 @@ export function setCustomTile(
     return editorDocument
   }
 
-  if (editorDocument.customTiles.get(position) === tileIndex) {
+  const current = editorDocument.customTiles.get(position)
+
+  if (current && current.tileIndex === tileIndex && current.mode === mode) {
     return editorDocument
   }
 
   const customTiles = new Map(editorDocument.customTiles)
-  customTiles.set(position, tileIndex)
+  customTiles.set(position, { tileIndex, mode })
+
+  return { ...editorDocument, customTiles }
+}
+
+/**
+ * Flips one placement between compositing over the skin and replacing it, and
+ * leaves its tile alone. The way the choice is changed after the fact: the
+ * alternative is re-stamping the cell, which needs the original tile still
+ * selected to not also change the art.
+ */
+export function swapCustomTileMode(
+  editorDocument: EditorDocument,
+  position: number,
+): EditorDocument {
+  const current = editorDocument.customTiles.get(position)
+
+  if (!current) {
+    return editorDocument
+  }
+
+  const customTiles = new Map(editorDocument.customTiles)
+  customTiles.set(position, {
+    ...current,
+    mode: current.mode === 'onTop' ? 'overwrite' : 'onTop',
+  })
 
   return { ...editorDocument, customTiles }
 }
@@ -210,6 +252,14 @@ export function clearCustomTile(
   customTiles.delete(position)
 
   return { ...editorDocument, customTiles }
+}
+
+/** Whether the skin's own layers are suppressed on this cell. */
+export function isCellOverwritten(
+  editorDocument: EditorDocument,
+  position: number,
+): boolean {
+  return editorDocument.customTiles.get(position)?.mode === 'overwrite'
 }
 
 export function clearCustomTiles(
@@ -255,14 +305,17 @@ export function resizeDocument(
   // against the new width or it would land on a different cell. Anchored at the
   // top-left like the cells, and dropped rather than clamped when it falls
   // outside what the resize kept.
-  const customTiles = new Map<number, number>()
+  const customTiles = new Map<number, CustomTile>()
 
-  for (const [position, tileIndex] of editorDocument.customTiles) {
+  for (const [position, customTile] of editorDocument.customTiles) {
     const x = getCellX(editorDocument, position)
     const y = getCellY(editorDocument, position)
 
     if (x < keptWidth && y < keptHeight) {
-      customTiles.set(getPositionFromCoordinates(x, y, clampedWidth), tileIndex)
+      customTiles.set(
+        getPositionFromCoordinates(x, y, clampedWidth),
+        customTile,
+      )
     }
   }
 

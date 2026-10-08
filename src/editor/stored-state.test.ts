@@ -20,6 +20,17 @@ const LEVEL = xsb('#######', '#.@ # #', '#$* $ #', '# ..  #', '#######')
  * `parseXsbToDocument` trims an all-space row before the codec ever sees it —
  * which is the very thing the stored form exists to survive.
  */
+/** A stored record for `LEVEL` with its custom tiles replaced wholesale. */
+function storedLevelWith(customTiles: Record<string, unknown>): string {
+  return JSON.stringify({
+    ...(JSON.parse(encodeStoredLevel(parseXsbToDocument(LEVEL))) as Record<
+      string,
+      unknown
+    >),
+    customTiles,
+  })
+}
+
 function roundTripLevel(text: string): string {
   const restored = decodeStoredLevel(
     encodeStoredLevel(parseXsbToDocument(text)),
@@ -60,21 +71,49 @@ describe('stored level', () => {
   })
 
   it('keeps the custom tiles, which XSB has nowhere to put', () => {
-    const placed = setCustomTile(parseXsbToDocument(LEVEL), 8, 20)
+    const placed = setCustomTile(
+      setCustomTile(parseXsbToDocument(LEVEL), 8, 20, 'onTop'),
+      9,
+      21,
+      'overwrite',
+    )
     const restored = decodeStoredLevel(encodeStoredLevel(placed))
 
-    expect(restored && [...restored.customTiles]).toEqual([[8, 20]])
+    expect(restored && [...restored.customTiles]).toEqual([
+      [8, { tileIndex: 20, mode: 'onTop' }],
+      [9, { tileIndex: 21, mode: 'overwrite' }],
+    ])
   })
 
   it('drops a custom tile that is not on the level it came back with', () => {
-    const stored = JSON.parse(
-      encodeStoredLevel(parseXsbToDocument(LEVEL)),
-    ) as Record<string, unknown>
-    stored.customTiles = { 0: 4, 999: 4, '-1': 4, nonsense: 4, 1: -2 }
+    const restored = decodeStoredLevel(
+      storedLevelWith({
+        0: { tileIndex: 4, mode: 'onTop' },
+        999: { tileIndex: 4, mode: 'onTop' },
+        '-1': { tileIndex: 4, mode: 'onTop' },
+        nonsense: { tileIndex: 4, mode: 'onTop' },
+        1: { tileIndex: -2, mode: 'onTop' },
+      }),
+    )
 
-    const restored = decodeStoredLevel(JSON.stringify(stored))
+    expect(restored && [...restored.customTiles]).toEqual([
+      [0, { tileIndex: 4, mode: 'onTop' }],
+    ])
+  })
 
-    expect(restored && [...restored.customTiles]).toEqual([[0, 4]])
+  /**
+   * The mode is the one field a stored placement can be missing, because the
+   * first build of the feature had no modes. On top is what those drew.
+   */
+  it('reads a placement with no mode, and a bare index, as on top', () => {
+    const restored = decodeStoredLevel(
+      storedLevelWith({ 0: { tileIndex: 4 }, 1: 5, 2: { mode: 'overwrite' } }),
+    )
+
+    expect(restored && [...restored.customTiles]).toEqual([
+      [0, { tileIndex: 4, mode: 'onTop' }],
+      [1, { tileIndex: 5, mode: 'onTop' }],
+    ])
   })
 
   it('ignores a record whose level no longer parses', () => {
