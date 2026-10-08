@@ -16,7 +16,7 @@ TypeScript, built with Vite. `npm run dev` to play, `npm run typecheck` to check
 | File       | Exports                                                                                                                                                                                                                            |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `types.ts` | `PlayerMoveDirection`, `Level`, `LevelState`                                                                                                                                                                                       |
-| `level.ts` | `parse(xsb: string)` → `Level` plus the initial `LevelState`                                                                                                                                                                       |
+| `level.ts` | `parseStringToLevelState(xsb: string)` → the initial `LevelState`                                                                                                                                                                         |
 | `step.ts`  | `step(levelState: LevelState, playerMoveDirection: PlayerMoveDirection): LevelState` — returns the same state for illegal moves                                                                                                    |
 | `rules.ts` | `isSolved(levelState)`, `getNextPosition(level, position, playerMoveDirection)`, `isPositionValid` (built from `isPositionOnLevel` + `isPositionWall`), `isPositionBox`, `isPositionPlayer`, `isPositionFree`, `updateBoxPosition` |
 
@@ -72,7 +72,7 @@ The gotcha: moving `left` from `x === 0` wraps to the end of the previous row in
 
 ### Walls come from a flood fill, not a border
 
-Real level text is ragged: short lines, leading spaces that are outside the puzzle, and wall segments with empty space behind them. Rather than requiring or synthesising an outer border, `parse()` flood-fills from the player across non-wall characters and marks everything it cannot reach as a wall.
+Real level text is ragged: short lines, leading spaces that are outside the puzzle, and wall segments with empty space behind them. Rather than requiring or synthesising an outer border, `parseStringToLevelState()` flood-fills from the player across non-wall characters and marks everything it cannot reach as a wall.
 
 That makes the playfield self-enclosing by construction, collapses the "outside the level" and "wall" cases into one flag, and catches malformed levels — a box or goal sealed off from the player is a parse error rather than an unwinnable game.
 
@@ -122,5 +122,5 @@ The only short names left are `x` and `y` for grid coordinates, where the single
 ## Deferred decisions
 
 - `step` returns only the new state, not `{ state, events }`. Animation and sound will need either a diff of consecutive states or an event channel; that choice is postponed until one of them is actually built.
-- The level is a hardcoded string in `host/level-data.ts`, to avoid an async loading path before there is anything to look at. When real level sets arrive they go in `levels/*.sok` as plain text, the host fetches them, and `core/level.ts` gains a pure `parseCollection(text)` to split a multi-level file and strip its `Title:` / `Author:` metadata. `parse()` itself does not change.
+- The level is a hardcoded string in `host/level-data.ts`, to avoid an async loading path before there is anything to look at. When real level sets arrive they go in `levels/*.sok` as plain text, the host fetches them, and `core/level.ts` gains a pure `parseCollection(text)` to split a multi-level file and strip its `Title:` / `Author:` metadata. `parseStringToLevelState()` itself does not change.
 - Redo is not wired up. The history stack already supports it; it needs a forward stack and a key.

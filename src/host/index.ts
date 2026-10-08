@@ -1,4 +1,4 @@
-import { parse } from '../core/level'
+import { parseStringToLevelState } from '../core/level'
 import { isSolved } from '../core/rules'
 import { step } from '../core/step'
 import type { LevelState, PlayerMoveDirection } from '../core/types'
@@ -38,7 +38,7 @@ const canvas = requireElement<HTMLCanvasElement>('#board')
 const statusLine = requireElement<HTMLElement>('#status')
 
 const render = createRenderer(canvas)
-const { initial } = parse(LEVEL)
+const initial = parseStringToLevelState(LEVEL)
 
 const history: LevelState[] = [initial]
 const current = () => history[history.length - 1]

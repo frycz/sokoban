@@ -1,9 +1,7 @@
 import { getPositionFromCoordinates } from './rules'
 import type { Level, LevelState } from './types'
 
-export type ParsedLevel = { level: Level; initial: LevelState }
-
-export function parse(text: string): ParsedLevel {
+export function parseStringToLevelState(text: string): LevelState {
   const lines = trimBlankEdges(text.replace(/\r\n?/g, '\n').split('\n'))
 
   if (lines.length === 0) {
@@ -94,7 +92,7 @@ export function parse(text: string): ParsedLevel {
 
   const level: Level = { width, height, wallMap, goalPositions }
 
-  return { level, initial: { level, playerCurrentPosition, boxPositions } }
+  return { level, playerCurrentPosition, boxPositions }
 }
 
 function reachableFrom(
