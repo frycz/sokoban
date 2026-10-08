@@ -16,6 +16,19 @@ export function getPositionFromCoordinates(
   return positionY * levelWidth + positionX
 }
 
+function areCoordinatesOnLevel(
+  level: Level,
+  positionX: number,
+  positionY: number,
+): boolean {
+  return (
+    positionX >= 0 &&
+    positionX < level.width &&
+    positionY >= 0 &&
+    positionY < level.height
+  )
+}
+
 function isPositionOnLevel(level: Level, position: number): boolean {
   return position >= 0 && position < level.width * level.height
 }
@@ -76,14 +89,12 @@ export function getNextPosition(
   const [positionStepX, positionStepY] = POSITION_STEPS[playerMoveDirection]
   const nextPositionX = getPositionX(level, currentPosition) + positionStepX
   const nextPositionY = getPositionY(level, currentPosition) + positionStepY
-  if (nextPositionX < 0 || nextPositionX >= level.width) return -1
 
-  const nextPosition = getPositionFromCoordinates(
-    nextPositionX,
-    nextPositionY,
-    level.width,
-  )
-  return isPositionOnLevel(level, nextPosition) ? nextPosition : -1
+  if (!areCoordinatesOnLevel(level, nextPositionX, nextPositionY)) {
+    return -1
+  }
+
+  return getPositionFromCoordinates(nextPositionX, nextPositionY, level.width)
 }
 
 export function isSolved(levelState: LevelState): boolean {
