@@ -6,12 +6,14 @@ The game logic is a pure state transition function; everything else is a thin sh
 index.html     the game
 editor.html    the level editor
 
-src/core/      types.ts, level.ts, step.ts, rules.ts    pure, no DOM, no I/O
-src/host/      index.ts, history.ts, level-data.ts      history stack, keybindings, dispatch
-src/render/    canvas.ts, colors.ts                     (state) => draw
-src/editor/    document.ts, xsb.ts, validate.ts,        the editor, same pure/shell/draw split
-               session.ts, layout.ts, canvas.ts,
-               index.ts
+src/core/       types.ts, level.ts, step.ts, rules.ts   pure, no DOM, no I/O
+src/host/       index.ts, history.ts, level-data.ts     history stack, keybindings, dispatch
+src/render/     canvas.ts, colors.ts, tile-roles.ts     (state) => draw
+src/editor/     document.ts, xsb.ts, validate.ts,       level mode, same pure/shell/draw split
+                session.ts, layout.ts, canvas.ts,
+                level-mode.ts, dom.ts, index.ts
+src/editor/skin/ sheet.ts, skin.ts, roles.ts,           skin mode
+                 palette.ts, preview.ts, atlas.ts
 ```
 
 TypeScript, built with Vite. `npm run verify` checks everything (format, lint,
@@ -182,15 +184,89 @@ The severities are a real line, not a mood: `error` means `parseStringToLevelSta
 
 `session.beginStroke()` opens an undo entry and every `paint` until the next one folds into it, so dragging across twenty cells undoes once. `paintDocument` returns the same object when the cell already looked like that, so a stroke that changed nothing records nothing — the same identity contract `step` has with the host.
 
+## `editor/skin/` — binds sprites to roles, exports an atlas
+
+Skin mode shares the level document with level mode: the level being drawn is the live preview, which is the only honest way to tell whether a skin reads.
+
+```
+render/tile-roles.ts   ROLE_ORDER, TileRole        pure leaf, no imports
+        ↑
+sheet.ts ← skin.ts ← atlas.ts                      pure (atlas.ts packs on a canvas)
+   ↑         ↑          ↑
+roles.ts     │          │                          pure
+   ↑         │          │
+palette.ts  preview.ts  │                          draw
+      └──────┴──────────┴→ skin-mode.ts            the only DOM
+```
+
+### A skin binds roles, not cells
+
+The game renderer resolves a sprite from state — it never sees a cell's identity — so a skin can say "walls look like this" but not "the wall at (4, 7) looks like this". Clicking the preview therefore binds the role of the cell clicked, via `getTopRoleAtCell`, and every wall changes at once.
+
+Per-cell decoration is a different feature: it is level data, not skin data, and it would need the XSB format to carry a decoration layer. Not deferred so much as separate.
+
+Because a level need not contain every role — there is nothing to click if it has no goals — the role list in the sidebar is a second drop target for the same action. The palette selection is the brush; the preview and the role list are both places to apply it.
+
+### Six roles, one tile each
+
+`ROLE_ORDER` in `render/tile-roles.ts` is the single source of truth: `TileRole` is derived from it, so a role cannot exist without a column in the atlas. Wall autotiling was cut — a 4-bit neighbour mask means 16 wall tiles for no mechanism — which leaves one tile per role and no mask arithmetic anywhere.
+
+`boxOnGoal` earns its own tile because it is the only "this one is done" signal on the board. `playerOnGoal` does not exist: goal is drawn on the ground layer and the player composites over it.
+
+### Layer order, and what it asks of the art
+
+```
+floor   → every non-wall cell
+goal    → over floor
+object  → box / boxOnGoal / player, over both
+```
+
+Floor goes under everything rather than being replaced by `goal`, so a goal tile can be a transparent marker _or_ an opaque tile of its own without the author having to redraw floor into it. What falls out is the one authoring rule: floor and wall opaque, the other four with transparency.
+
+A wall with no floor around it is not drawn at all, exactly as in the game, so a skin never supplies art for "outside the level".
+
+### An unbound role draws as flat colour
+
+`preview.ts` falls back to the procedural palette for anything unbound, so the preview is always readable and what is still missing shows as a flat block rather than a hole.
+
+### One vocabulary for every sheet, including our own output
+
+`SheetSettings` is `tileWidth`, `tileHeight`, `margin`, `spacing` — enough to slice essentially any tileset. The exported atlas is described with the same four numbers, so the game's loader will cut our output with the identical arithmetic instead of a second special-cased path.
+
+Re-slicing drops every binding. A tile index only means something against one grid, so keeping indices that now point at different art would be silently wrong; `clearBindings` is the honest answer.
+
+### The manifest's role list is data, not a convention
+
+```json
+{
+  "name": "mossy-stone",
+  "tileWidth": 32,
+  "tileHeight": 32,
+  "margin": 1,
+  "spacing": 2,
+  "pixelated": true,
+  "roles": ["floor", "goal", "wall", "box", "boxOnGoal", "player"]
+}
+```
+
+One row, `roles[n]` in column `n`. Naming the roles in the file is what lets the set grow — wall variants, ice, conveyors — by appending to `ROLE_ORDER` and widening the image, with no version field and no breakage for skins already exported, because every skin describes itself.
+
+### Exported tiles are extruded by a pixel
+
+The game scales tiles to fit the canvas and so is almost never drawing at native size. Without extrusion, neighbouring tiles bleed in along the seams at some window sizes. `atlas.ts` duplicates each tile's edge rows, columns and corner pixels outward, which is exactly what `margin: 1` and `spacing: 2` in the manifest describe — one pixel before the first tile, two between each pair, one from each side. No column is ever shared between two tiles.
+
+Packing also ships only what the skin uses, so a skin cut from a 500-tile sheet exports as six tiles.
+
 ## Boundaries that matter
 
 - Rules live only in `core/`. `step` is the single place state changes.
 - Input mapping lives only in `host/`. `core/` never sees a keycode — it takes a `PlayerMoveDirection`.
 - Undo lives only in `host/`, outside engine state.
 - `core/` imports nothing from `host/`, `render/` or `editor/`, so it runs unchanged in Node tests, a terminal front end, or a solver.
-- `editor/` imports nothing from `host/`, and `host/` imports nothing from `editor/`. The two front ends meet only in `core/` and in `render/colors.ts`.
-- `render/colors.ts` is a leaf. It exists so the level you draw looks like the level you play without the editor depending on the game's renderer.
-- `index.ts` is the only file in each front end that touches the DOM.
+- `editor/` imports nothing from `host/`, and `host/` imports nothing from `editor/`. The two front ends meet only in `core/` and in the leaves of `render/`.
+- `render/colors.ts` and `render/tile-roles.ts` are leaves that import nothing. They exist so the level you draw looks like the level you play, and so the editor and the game agree on what a role is, without the editor depending on the game's renderer.
+- The DOM lives only in `host/index.ts`, `editor/index.ts`, `editor/level-mode.ts` and `editor/skin-mode.ts`. Everything under `editor/skin/` is pure or draws into a canvas it was handed.
+- `editor/index.ts` is a mode switch and nothing else: it owns which panel is visible and routes keys and resizes to it.
 
 ## Tests
 

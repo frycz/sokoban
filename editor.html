@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Sokoban — level editor</title>
+    <title>Sokoban — editor</title>
     <style>
       :root {
         color-scheme: dark;
@@ -14,9 +14,9 @@
         margin: 0;
       }
       body {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 320px;
-        gap: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
         padding: 16px;
         box-sizing: border-box;
         background: #11131a;
@@ -27,6 +27,13 @@
           Menlo,
           monospace;
       }
+      section.mode {
+        flex: 1 1 auto;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 320px;
+        gap: 16px;
+        min-height: 0;
+      }
       main,
       aside {
         display: flex;
@@ -35,9 +42,20 @@
         min-height: 0;
         min-width: 0;
       }
-      #grid {
+      aside {
+        overflow-y: auto;
+      }
+      canvas.board {
         flex: 1 1 auto;
         min-height: 0;
+        touch-action: none;
+        cursor: crosshair;
+      }
+      #sheet-palette {
+        flex: 0 0 auto;
+        height: 200px;
+        border: 1px solid #2c3444;
+        border-radius: 4px;
         touch-action: none;
         cursor: crosshair;
       }
@@ -53,6 +71,11 @@
         flex-wrap: wrap;
         gap: 6px;
         align-items: center;
+      }
+      .modes {
+        flex: 0 0 auto;
+        border-bottom: 1px solid #2c3444;
+        padding-bottom: 12px;
       }
       button {
         font: inherit;
@@ -92,6 +115,22 @@
         border-radius: 4px;
         padding: 4px 6px;
       }
+      input[type='text'] {
+        font: inherit;
+        color: inherit;
+        flex: 1 1 8em;
+        min-width: 0;
+        background: #1d2230;
+        border: 1px solid #2c3444;
+        border-radius: 4px;
+        padding: 4px 6px;
+      }
+      input[type='file'] {
+        font: inherit;
+        color: inherit;
+        width: 100%;
+        font-size: 12px;
+      }
       textarea {
         font: inherit;
         color: inherit;
@@ -104,69 +143,148 @@
         border-radius: 4px;
         padding: 8px;
       }
-      #report p {
+      .report p {
         margin: 0 0 4px;
       }
-      #report .ok {
+      .report .ok {
         color: #6faf6a;
       }
-      #report .error {
+      .report .error {
         color: #e07a7a;
       }
-      #report .warning {
+      .report .warning {
         color: #d7b36a;
       }
+      #role-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      #role-list button {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        text-align: left;
+        width: 100%;
+      }
+      #role-list .tile {
+        width: 24px;
+        height: 24px;
+        flex: 0 0 auto;
+        border: 1px solid #2c3444;
+        border-radius: 2px;
+        background-color: #0c0e14;
+        background-repeat: no-repeat;
+        image-rendering: pixelated;
+      }
+      #role-list .bound {
+        margin-left: auto;
+        color: #7d8699;
+        font-size: 12px;
+      }
       @media (max-width: 760px) {
-        body {
+        section.mode {
           grid-template-columns: minmax(0, 1fr);
-          grid-template-rows: 60vh auto;
+          grid-template-rows: 55vh auto;
         }
       }
     </style>
   </head>
   <body>
-    <main>
-      <div class="row" id="palette">
-        <button type="button" data-brush="wall">
-          <span class="swatch" style="background: #4b5570"></span>1 wall
-        </button>
-        <button type="button" data-brush="floor">
-          <span class="swatch" style="background: #262b38"></span>2 floor
-        </button>
-        <button type="button" data-brush="goal">
-          <span class="swatch" style="background: #6d5a3f"></span>3 goal
-        </button>
-        <button type="button" data-brush="box">
-          <span class="swatch" style="background: #c08552"></span>4 box
-        </button>
-        <button type="button" data-brush="player">
-          <span class="swatch" style="background: #63a8e0"></span>5 player
-        </button>
-      </div>
-      <canvas id="grid"></canvas>
-      <div class="row">
-        <label for="width">w</label>
-        <input id="width" type="number" />
-        <label for="height">h</label>
-        <input id="height" type="number" />
-        <button type="button" id="new">New</button>
-        <button type="button" id="undo">Undo (Z)</button>
-      </div>
-    </main>
-    <aside>
-      <h2>Status</h2>
-      <div id="report"></div>
-      <h2>XSB</h2>
-      <textarea
-        id="xsb"
-        spellcheck="false"
-        placeholder="Paste XSB here, then Load"
-      ></textarea>
-      <div class="row">
-        <button type="button" id="load">Load</button>
-        <button type="button" id="export">Export</button>
-      </div>
-    </aside>
+    <div class="row modes">
+      <button type="button" id="mode-level">Level</button>
+      <button type="button" id="mode-skin">Skin</button>
+    </div>
+
+    <section class="mode" id="level-mode">
+      <main>
+        <div class="row" id="brushes">
+          <button type="button" data-brush="wall">
+            <span class="swatch" style="background: #4b5570"></span>1 wall
+          </button>
+          <button type="button" data-brush="floor">
+            <span class="swatch" style="background: #262b38"></span>2 floor
+          </button>
+          <button type="button" data-brush="goal">
+            <span class="swatch" style="background: #6d5a3f"></span>3 goal
+          </button>
+          <button type="button" data-brush="box">
+            <span class="swatch" style="background: #c08552"></span>4 box
+          </button>
+          <button type="button" data-brush="player">
+            <span class="swatch" style="background: #63a8e0"></span>5 player
+          </button>
+        </div>
+        <canvas class="board" id="grid"></canvas>
+        <div class="row">
+          <label for="width">w</label>
+          <input id="width" type="number" />
+          <label for="height">h</label>
+          <input id="height" type="number" />
+          <button type="button" id="new">New</button>
+          <button type="button" id="undo">Undo (Z)</button>
+        </div>
+      </main>
+      <aside>
+        <h2>Status</h2>
+        <div class="report" id="report"></div>
+        <h2>XSB</h2>
+        <textarea
+          id="xsb"
+          spellcheck="false"
+          placeholder="Paste XSB here, then Load"
+        ></textarea>
+        <div class="row">
+          <button type="button" id="load">Load</button>
+          <button type="button" id="export">Export</button>
+        </div>
+      </aside>
+    </section>
+
+    <section class="mode" id="skin-mode" hidden>
+      <main>
+        <h2>Preview — the level from level mode</h2>
+        <canvas class="board" id="skin-preview"></canvas>
+      </main>
+      <aside>
+        <h2>Tile sheet</h2>
+        <input id="sheet-file" type="file" accept="image/*" />
+        <div class="row">
+          <label for="tile-width">tile w</label>
+          <input id="tile-width" type="number" min="1" />
+          <label for="tile-height">h</label>
+          <input id="tile-height" type="number" min="1" />
+        </div>
+        <div class="row">
+          <label for="sheet-margin">margin</label>
+          <input id="sheet-margin" type="number" min="0" />
+          <label for="sheet-spacing">spacing</label>
+          <input id="sheet-spacing" type="number" min="0" />
+        </div>
+        <canvas id="sheet-palette"></canvas>
+        <div class="row">
+          <label for="pixelated">
+            <input id="pixelated" type="checkbox" checked />
+            pixel art
+          </label>
+        </div>
+
+        <h2>Roles</h2>
+        <div class="report" id="skin-report"></div>
+        <div id="role-list"></div>
+
+        <h2>Export</h2>
+        <div class="row">
+          <label for="skin-name">name</label>
+          <input id="skin-name" type="text" value="untitled" />
+        </div>
+        <div class="row">
+          <button type="button" id="export-atlas">atlas.png</button>
+          <button type="button" id="export-manifest">skin.json</button>
+        </div>
+      </aside>
+    </section>
+
     <script type="module" src="/src/editor/index.ts"></script>
   </body>
 </html>
