@@ -10,10 +10,6 @@ const COLORS = {
   player: '#63a8e0',
 }
 
-/**
- * Builds a renderer bound to one canvas. The returned function is the only
- * thing the host needs, and it knows nothing beyond the state it is handed.
- */
 export function createRenderer(canvas: HTMLCanvasElement): (levelState: LevelState) => void {
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Canvas 2D context is unavailable')
@@ -42,8 +38,6 @@ export function createRenderer(canvas: HTMLCanvasElement): (levelState: LevelSta
       const { x, y } = topLeftOf(position)
 
       if (level.wallMap[position]) {
-        // Only walls touching the playfield are drawn, so the unreachable
-        // void around the level stays empty instead of becoming a slab.
         if (!touchesFloor(level, position)) continue
         context.fillStyle = COLORS.wall
         context.fillRect(x, y, tile, tile)
@@ -73,7 +67,7 @@ export function createRenderer(canvas: HTMLCanvasElement): (levelState: LevelSta
         y + padding,
         tile - padding * 2,
         tile - padding * 2,
-        tile * 0.16
+        tile * 0.16,
       )
       context.fill()
     }
@@ -86,7 +80,6 @@ export function createRenderer(canvas: HTMLCanvasElement): (levelState: LevelSta
   }
 }
 
-/** True if any of the 8 surrounding cells is playable floor. */
 function touchesFloor(level: Level, position: number): boolean {
   const x = position % level.width
   const y = Math.floor(position / level.width)
@@ -108,7 +101,7 @@ function roundedRectanglePath(
   y: number,
   width: number,
   height: number,
-  radius: number
+  radius: number,
 ): void {
   context.beginPath()
   context.moveTo(x + radius, y)

@@ -5,11 +5,8 @@ import type { LevelState, PlayerMoveDirection } from '../core/types'
 import { createRenderer } from '../render/canvas'
 import { LEVEL } from './level-data'
 
-/** The host has three commands, so the tag belongs here rather than in core. */
 type Command =
-  | { type: 'move'; playerMoveDirection: PlayerMoveDirection }
-  | { type: 'undo' }
-  | { type: 'reset' }
+  { type: 'move'; playerMoveDirection: PlayerMoveDirection } | { type: 'undo' } | { type: 'reset' }
 
 const BINDINGS: Record<string, Command> = {
   ArrowUp: { type: 'move', playerMoveDirection: 'up' },
@@ -37,8 +34,6 @@ const statusLine = requireElement<HTMLElement>('#status')
 const render = createRenderer(canvas)
 const { initial } = parse(LEVEL)
 
-// The one piece of mutable state in the program. Undo and reset are history
-// operations, which is why the engine does not know about them.
 const history: LevelState[] = [initial]
 const current = () => history[history.length - 1]
 
@@ -46,7 +41,7 @@ function run(command: Command): void {
   switch (command.type) {
     case 'move': {
       const next = step(current(), command.playerMoveDirection)
-      if (next === current()) return // illegal move, nothing to record
+      if (next === current()) return
       history.push(next)
       break
     }

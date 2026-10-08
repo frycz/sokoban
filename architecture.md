@@ -13,11 +13,11 @@ TypeScript, built with Vite. `npm run dev` to play, `npm run typecheck` to check
 
 ## `core/` — pure, no DOM, no I/O
 
-| File | Exports |
-| --- | --- |
-| `types.ts` | `PlayerMoveDirection`, `Level`, `LevelState` |
-| `level.ts` | `parse(xsb: string)` → `Level` plus the initial `LevelState` |
-| `step.ts` | `step(levelState: LevelState, playerMoveDirection: PlayerMoveDirection): LevelState` — returns the same state for illegal moves |
+| File       | Exports                                                                                                                                                                                                                          |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `types.ts` | `PlayerMoveDirection`, `Level`, `LevelState`                                                                                                                                                                                     |
+| `level.ts` | `parse(xsb: string)` → `Level` plus the initial `LevelState`                                                                                                                                                                     |
+| `step.ts`  | `step(levelState: LevelState, playerMoveDirection: PlayerMoveDirection): LevelState` — returns the same state for illegal moves                                                                                                  |
 | `rules.ts` | `isSolved(levelState)`, `getNextPosition(level, position, playerMoveDirection)`, `isPositionValid` (built from `isPositionOnMap` + `isPositionWall`), `isPositionBox`, `isPositionPlayer`, `isPositionFree`, `updateBoxPosition` |
 
 ### State shape
@@ -49,9 +49,7 @@ The host does have three commands, so the tag lives there instead:
 
 ```ts
 type Command =
-  | { type: 'move'; playerMoveDirection: PlayerMoveDirection }
-  | { type: 'undo' }
-  | { type: 'reset' }
+  { type: 'move'; playerMoveDirection: PlayerMoveDirection } | { type: 'undo' } | { type: 'reset' }
 ```
 
 Static data (`Level`) is separated from dynamic data (`LevelState`). The level never changes, so snapshots for undo only copy the player position and the box set.
@@ -80,15 +78,15 @@ That makes the playfield self-enclosing by construction, collapses the "outside 
 
 Levels are parsed from standard XSB text, so existing level sets work without conversion.
 
-| Character | Meaning |
-| --- | --- |
-| `#` | wall |
-| `$` | box |
-| `.` | goal |
-| `@` | player |
-| `*` | box on goal |
-| `+` | player on goal |
-| space | floor |
+| Character | Meaning        |
+| --------- | -------------- |
+| `#`       | wall           |
+| `$`       | box            |
+| `.`       | goal           |
+| `@`       | player         |
+| `*`       | box on goal    |
+| `+`       | player on goal |
+| space     | floor          |
 
 ## `host/` — the only mutable thing in the system
 

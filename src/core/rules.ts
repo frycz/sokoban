@@ -7,28 +7,18 @@ const DELTAS: Record<PlayerMoveDirection, readonly [number, number]> = {
   right: [1, 0],
 }
 
-/** True if `position` is a real cell of the grid rather than the -1 sentinel. */
 export function isPositionOnMap(level: Level, position: number): boolean {
   return position >= 0 && position < level.width * level.height
 }
 
-/**
- * True if `position` holds a wall. Only meaningful for a position that is on
- * the map, so callers check `isPositionOnMap` first.
- */
 export function isPositionWall(level: Level, position: number): boolean {
   return level.wallMap[position]
 }
 
-/**
- * A copy of `boxPositions` with one box moved. Copying is what keeps `step`
- * pure, and it is cheap because the set holds one entry per box rather than
- * one per cell.
- */
 export function updateBoxPosition(
   boxPositions: ReadonlySet<number>,
   currentBoxPosition: number,
-  nextBoxPosition: number
+  nextBoxPosition: number,
 ): Set<number> {
   const updatedBoxPositions = new Set(boxPositions)
   updatedBoxPositions.delete(currentBoxPosition)
@@ -36,30 +26,18 @@ export function updateBoxPosition(
   return updatedBoxPositions
 }
 
-/** True if a box currently sits on `position`. */
 export function isPositionBox(levelState: LevelState, position: number): boolean {
   return levelState.boxPositions.has(position)
 }
 
-/**
- * True if `position` is a cell a piece can occupy: on the map, and not a wall.
- * The order of the two checks matters, because `isPositionWall` does a raw
- * lookup that reads as falsy off the map.
- */
 export function isPositionValid(level: Level, position: number): boolean {
   return isPositionOnMap(level, position) && !isPositionWall(level, position)
 }
 
-/** True if the player currently stands on `position`. */
 export function isPositionPlayer(levelState: LevelState, position: number): boolean {
   return levelState.playerCurrentPosition === position
 }
 
-/**
- * True if nothing occupies `position`: a real floor cell with neither a box
- * nor the player on it. Note that "not free" is not the same as "blocked" —
- * a cell holding a box is not free, but a box can still be pushed.
- */
 export function isPositionFree(levelState: LevelState, position: number): boolean {
   return (
     isPositionValid(levelState.level, position) &&
@@ -68,15 +46,10 @@ export function isPositionFree(levelState: LevelState, position: number): boolea
   )
 }
 
-/**
- * Flat index of the cell one step in `playerMoveDirection`, or -1 if that
- * leaves the grid. Going through x/y rather than adding +/-1 is what stops a
- * `left` move at x === 0 from wrapping to the end of the previous row.
- */
 export function getNextPosition(
   level: Level,
   position: number,
-  playerMoveDirection: PlayerMoveDirection
+  playerMoveDirection: PlayerMoveDirection,
 ): number {
   const [deltaX, deltaY] = DELTAS[playerMoveDirection]
   const x = (position % level.width) + deltaX

@@ -2,15 +2,6 @@ import type { Level, LevelState } from './types'
 
 export type ParsedLevel = { level: Level; initial: LevelState }
 
-/**
- * Parses one level in XSB notation:
- *
- *   #  wall        $  box          .  goal
- *   @  player      *  box on goal  +  player on goal
- *
- * Space is floor. `-` and `_` are accepted as floor too, since some level
- * sets use them to keep leading whitespace from being stripped.
- */
 export function parse(text: string): ParsedLevel {
   const lines = trimBlankEdges(text.replace(/\r\n?/g, '\n').split('\n'))
   if (lines.length === 0) throw new Error('Level is empty')
@@ -19,8 +10,6 @@ export function parse(text: string): ParsedLevel {
   const width = Math.max(...lines.map((line) => line.length))
   const cellCount = width * height
 
-  // "open" means the character is not a wall. Which of those cells are actually
-  // playable is decided by the flood fill below.
   const open = new Array<boolean>(cellCount).fill(false)
   const goalPositions = new Set<number>()
   const boxPositions = new Set<number>()
@@ -63,7 +52,7 @@ export function parse(text: string): ParsedLevel {
           break
         default:
           throw new Error(
-            `Unexpected character ${JSON.stringify(character)} at line ${y + 1}, column ${x + 1}`
+            `Unexpected character ${JSON.stringify(character)} at line ${y + 1}, column ${x + 1}`,
           )
       }
     }
@@ -72,9 +61,7 @@ export function parse(text: string): ParsedLevel {
   if (playerCurrentPosition < 0) throw new Error('Level has no player (@ or +)')
   if (boxPositions.size === 0) throw new Error('Level has no boxes')
   if (boxPositions.size !== goalPositions.size) {
-    throw new Error(
-      `Level has ${boxPositions.size} boxes but ${goalPositions.size} goals`
-    )
+    throw new Error(`Level has ${boxPositions.size} boxes but ${goalPositions.size} goals`)
   }
 
   const interior = reachableFrom(open, width, height, playerCurrentPosition)
@@ -85,24 +72,27 @@ export function parse(text: string): ParsedLevel {
     if (!interior[goal]) throw new Error(`Goal at ${describe(width, goal)} is outside the walls`)
   }
 
-  // Anything the player cannot reach is a wall. That makes the playfield
-  // self-enclosing, so levels whose text has no outer border still behave.
   const wallMap = interior.map((reached) => !reached)
 
   const level: Level = { width, height, wallMap, goalPositions }
   return { level, initial: { level, playerCurrentPosition, boxPositions } }
 }
 
-/** Flood fill across open cells, four-connected, without wrapping rows. */
 function reachableFrom(
   open: readonly boolean[],
   width: number,
   height: number,
-  start: number
+  start: number,
 ): boolean[] {
   const reached = new Array<boolean>(width * height).fill(false)
   reached[start] = true
   const pending = [start]
+
+  const visit = (neighbourPosition: number) => {
+    if (reached[neighbourPosition] || !open[neighbourPosition]) return
+    reached[neighbourPosition] = true
+    pending.push(neighbourPosition)
+  }
 
   while (pending.length > 0) {
     const position = pending.pop()!
@@ -113,12 +103,6 @@ function reachableFrom(
     if (y < height - 1) visit(position + width)
     if (x > 0) visit(position - 1)
     if (x < width - 1) visit(position + 1)
-
-    function visit(neighbourPosition: number) {
-      if (reached[neighbourPosition] || !open[neighbourPosition]) return
-      reached[neighbourPosition] = true
-      pending.push(neighbourPosition)
-    }
   }
 
   return reached
