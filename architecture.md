@@ -241,14 +241,17 @@ The classifier lives in `render/` rather than the editor so the preview and the 
 ### Layer order, and what it asks of the art
 
 ```
-floor   → every non-wall cell
+floor   → every cell of the board, walls included
+wall    → over floor
 goal    → over floor
 object  → box / boxOnGoal / player, over both
 ```
 
-Floor goes under everything rather than being replaced by `goal`, so a goal tile can be a transparent marker _or_ an opaque tile of its own without the author having to redraw floor into it. What falls out is the one authoring rule: floor and wall opaque, the other four with transparency.
+Floor is one layer under the whole board rather than a tile that the others replace, so every other tile can be a transparent overlay _or_ an opaque tile of its own without the author having to redraw floor into it. What falls out is the one authoring rule: floor opaque, everything else free to use transparency.
 
-A wall with no floor around it is not drawn at all, exactly as in the game, so a skin never supplies art for "outside the level".
+That includes `wall`: a wall piece that leaves its edges transparent — a rounded cap, a bevel, a soft shadow onto the floor — composites over the floor it sits on instead of leaving a hole. The nine wall pieces are the reason this matters, since every one of them is an edge or corner whose outline is the point.
+
+A wall with no floor around it is not drawn at all, exactly as in the game — not even floor — so a skin never supplies art for "outside the level" and the board keeps its silhouette against the page.
 
 ### An unbound role draws as flat colour
 

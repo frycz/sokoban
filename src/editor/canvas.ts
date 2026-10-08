@@ -43,9 +43,14 @@ export function createEditorRenderer(
       y: layout.originY + getCellY(editorDocument, position) * tileSize,
     })
 
+    // Floor under every cell, walls included, then everything else over it —
+    // the same layer order the game renderer and the skin preview use.
     for (let position = 0; position < editorDocument.cells.length; position++) {
       const cell = editorDocument.cells[position]
       const { x, y } = topLeftOf(position)
+
+      context.fillStyle = COLORS.floor
+      context.fillRect(x, y, tileSize, tileSize)
 
       if (cell.isWall) {
         context.fillStyle = COLORS.wall
@@ -59,9 +64,6 @@ export function createEditorRenderer(
         )
         continue
       }
-
-      context.fillStyle = COLORS.floor
-      context.fillRect(x, y, tileSize, tileSize)
 
       if (cell.isGoal) {
         context.fillStyle = COLORS.goal

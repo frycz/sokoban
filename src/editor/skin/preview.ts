@@ -31,8 +31,8 @@ const FALLBACK_COLORS: Record<TileRole, string> = {
 
 /**
  * The level from level mode, drawn under the skin. Layer order matches what the
- * game renderer will do: floor under every non-wall cell, goal over it, the
- * object over both.
+ * game renderer does: floor under every cell of the board, wall or goal over it,
+ * the object over both.
  *
  * Like the game, a wall with no floor anywhere around it is not drawn at all,
  * so a skin never has to supply art for "outside the level".
@@ -105,15 +105,21 @@ export function createSkinPreviewPainter(
       const x = layout.originX + getCellX(editorDocument, position) * tileSize
       const y = layout.originY + getCellY(editorDocument, position) * tileSize
 
-      if (cell.isWall) {
-        if (touchesFloor(editorDocument, position)) {
-          drawRole(getWallRoleAt(editorDocument, position), x, y)
-        }
-
+      // Outside the level nothing is drawn at all, not even floor, so a skin
+      // never has to supply art for it.
+      if (cell.isWall && !touchesFloor(editorDocument, position)) {
         continue
       }
 
+      // Floor first on every cell the board occupies, walls included: it is one
+      // layer under the level and every other tile composites over it.
       drawRole('floor', x, y)
+
+      if (cell.isWall) {
+        drawRole(getWallRoleAt(editorDocument, position), x, y)
+
+        continue
+      }
 
       if (cell.isGoal) {
         drawRole('goal', x, y)

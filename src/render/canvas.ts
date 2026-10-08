@@ -37,23 +37,26 @@ export function createRenderer(
       y: originY + getPositionY(level, position) * tile,
     })
 
+    // Floor is one layer under the whole board, walls included, and everything
+    // else composites over it. Only cells outside the level are left bare.
     for (let position = 0; position < level.wallMap.length; position++) {
       const { x, y } = topLeftOf(position)
+      const isWall = level.wallMap[position]
 
-      if (level.wallMap[position]) {
-        if (!touchesFloor(level, position)) {
-          continue
-        }
+      if (isWall && !touchesFloor(level, position)) {
+        continue
+      }
 
+      context.fillStyle = COLORS.floor
+      context.fillRect(x, y, tile, tile)
+
+      if (isWall) {
         context.fillStyle = COLORS.wall
         context.fillRect(x, y, tile, tile)
         context.fillStyle = COLORS.wallEdge
         context.fillRect(x, y, tile, Math.max(1, Math.round(tile * 0.12)))
         continue
       }
-
-      context.fillStyle = COLORS.floor
-      context.fillRect(x, y, tile, tile)
 
       if (level.goalPositions.has(position)) {
         context.fillStyle = COLORS.goal
