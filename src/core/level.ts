@@ -17,11 +17,11 @@ export function parse(text: string): ParsedLevel {
 
   const height = lines.length
   const width = Math.max(...lines.map((line) => line.length))
-  const size = width * height
+  const cellCount = width * height
 
   // "open" means the character is not a wall. Which of those cells are actually
   // playable is decided by the flood fill below.
-  const open = new Array<boolean>(size).fill(false)
+  const open = new Array<boolean>(cellCount).fill(false)
   const goals = new Set<number>()
   const boxes = new Set<number>()
   let player = -1
@@ -29,41 +29,41 @@ export function parse(text: string): ParsedLevel {
   for (let y = 0; y < height; y++) {
     const line = lines[y]
     for (let x = 0; x < width; x++) {
-      const char = x < line.length ? line[x] : ' '
-      const i = y * width + x
-      switch (char) {
+      const character = x < line.length ? line[x] : ' '
+      const index = y * width + x
+      switch (character) {
         case '#':
           break
         case ' ':
         case '-':
         case '_':
-          open[i] = true
+          open[index] = true
           break
         case '$':
-          open[i] = true
-          boxes.add(i)
+          open[index] = true
+          boxes.add(index)
           break
         case '*':
-          open[i] = true
-          boxes.add(i)
-          goals.add(i)
+          open[index] = true
+          boxes.add(index)
+          goals.add(index)
           break
         case '.':
-          open[i] = true
-          goals.add(i)
+          open[index] = true
+          goals.add(index)
           break
         case '@':
-          open[i] = true
-          player = i
+          open[index] = true
+          player = index
           break
         case '+':
-          open[i] = true
-          goals.add(i)
-          player = i
+          open[index] = true
+          goals.add(index)
+          player = index
           break
         default:
           throw new Error(
-            `Unexpected character ${JSON.stringify(char)} at line ${y + 1}, column ${x + 1}`
+            `Unexpected character ${JSON.stringify(character)} at line ${y + 1}, column ${x + 1}`
           )
       }
     }
@@ -96,26 +96,26 @@ function reachableFrom(
   open: readonly boolean[],
   width: number,
   height: number,
-  from: number
+  start: number
 ): boolean[] {
   const reached = new Array<boolean>(width * height).fill(false)
-  reached[from] = true
-  const stack = [from]
+  reached[start] = true
+  const pending = [start]
 
-  while (stack.length > 0) {
-    const i = stack.pop()!
-    const x = i % width
-    const y = (i - x) / width
+  while (pending.length > 0) {
+    const position = pending.pop()!
+    const x = position % width
+    const y = (position - x) / width
 
-    if (y > 0) visit(i - width)
-    if (y < height - 1) visit(i + width)
-    if (x > 0) visit(i - 1)
-    if (x < width - 1) visit(i + 1)
+    if (y > 0) visit(position - width)
+    if (y < height - 1) visit(position + width)
+    if (x > 0) visit(position - 1)
+    if (x < width - 1) visit(position + 1)
 
-    function visit(n: number) {
-      if (reached[n] || !open[n]) return
-      reached[n] = true
-      stack.push(n)
+    function visit(neighbourPosition: number) {
+      if (reached[neighbourPosition] || !open[neighbourPosition]) return
+      reached[neighbourPosition] = true
+      pending.push(neighbourPosition)
     }
   }
 
@@ -123,12 +123,12 @@ function reachableFrom(
 }
 
 function trimBlankEdges(lines: string[]): string[] {
-  const out = [...lines]
-  while (out.length > 0 && out[out.length - 1].trim() === '') out.pop()
-  while (out.length > 0 && out[0].trim() === '') out.shift()
-  return out
+  const trimmed = [...lines]
+  while (trimmed.length > 0 && trimmed[trimmed.length - 1].trim() === '') trimmed.pop()
+  while (trimmed.length > 0 && trimmed[0].trim() === '') trimmed.shift()
+  return trimmed
 }
 
-function describe(width: number, i: number): string {
-  return `(${i % width}, ${Math.floor(i / width)})`
+function describe(width: number, position: number): string {
+  return `(${position % width}, ${Math.floor(position / width)})`
 }

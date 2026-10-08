@@ -15,31 +15,31 @@ TypeScript, built with Vite. `npm run dev` to play, `npm run typecheck` to check
 
 | File | Exports |
 | --- | --- |
-| `types.ts` | `Dir`, `Level`, `State` |
+| `types.ts` | `Direction`, `Level`, `State` |
 | `level.ts` | `parse(xsb: string)` → `Level` plus the initial `State` |
-| `step.ts` | `step(state: State, dir: Dir): State` — returns the same state for illegal moves |
-| `rules.ts` | `isSolved(state)`, `neighbour(level, i, dir)`, `toXY` / `toIdx` helpers |
+| `step.ts` | `step(state: State, direction: Direction): State` — returns the same state for illegal moves |
+| `rules.ts` | `isSolved(state)`, `neighbour(level, position, direction)`, `toCoordinates` / `toIndex` helpers |
 
 ### State shape
 
 ```ts
-type Dir = 'up' | 'down' | 'left' | 'right'
+type Direction = 'up' | 'down' | 'left' | 'right'
 type Level = { width: number; height: number; walls: boolean[]; goals: ReadonlySet<number> }
 type State = { level: Level; player: number; boxes: ReadonlySet<number> }
 ```
 
 ### There is no `Action` type
 
-The engine takes a bare `Dir`, not a tagged `{ type: 'move'; dir: Dir }`. A discriminated union with one member costs a wrapper object at every call site and carries no information, and Sokoban's engine genuinely has one action — undo, reset, and level-select are all history or host concerns.
+The engine takes a bare `Direction`, not a tagged `{ type: 'move'; direction: Direction }`. A discriminated union with one member costs a wrapper object at every call site and carries no information, and Sokoban's engine genuinely has one action — undo, reset, and level-select are all history or host concerns.
 
-It also means `Dir[]` is the engine's replay format, which lines up with the standard LURD solution notation: replaying is `dirs.reduce(step, initial)`.
+It also means `Direction[]` is the engine's replay format, which lines up with the standard LURD solution notation: replaying is `directions.reduce(step, initial)`.
 
 If a second engine-level action ever appears, the union comes back and the call sites change. That is a deliberate bet that one never will.
 
 The host does have three commands, so the tag lives there instead:
 
 ```ts
-type Command = { type: 'move'; dir: Dir } | { type: 'undo' } | { type: 'reset' }
+type Command = { type: 'move'; direction: Direction } | { type: 'undo' } | { type: 'reset' }
 ```
 
 Static data (`Level`) is separated from dynamic data (`State`). The level never changes, so snapshots for undo only copy the player position and the box set.
@@ -49,9 +49,9 @@ Static data (`Level`) is separated from dynamic data (`State`). The level never 
 Positions are row-major indices into the flattened grid, not `{x, y}` objects.
 
 ```ts
-const idx = y * width + x
-const x = idx % width
-const y = Math.floor(idx / width)
+const index = y * width + x
+const x = index % width
+const y = Math.floor(index / width)
 ```
 
 Why: JavaScript `Set` and `Map` compare objects by reference, so `set.has({x, y})` is always false. Numbers are compared by value, so `Set<number>` membership works and is O(1). It also makes `walls` a direct array lookup, and it makes states cheap to hash and compare, which matters if deadlock detection or a solver is added later.
@@ -68,7 +68,7 @@ That makes the playfield self-enclosing by construction, collapses the "outside 
 
 Levels are parsed from standard XSB text, so existing level sets work without conversion.
 
-| Char | Meaning |
+| Character | Meaning |
 | --- | --- |
 | `#` | wall |
 | `$` | box |
@@ -97,9 +97,15 @@ Full redraw every time is deliberate: it keeps the renderer a pure function of s
 ## Boundaries that matter
 
 - Rules live only in `core/`. `step` is the single place state changes.
-- Input mapping lives only in `host/`. `core/` never sees a keycode — it takes a `Dir`.
+- Input mapping lives only in `host/`. `core/` never sees a keycode — it takes a `Direction`.
 - Undo lives only in `host/`, outside engine state.
 - `core/` imports nothing from `host/` or `render/`, so it runs unchanged in Node tests, a terminal front end, or a solver.
+
+## Naming
+
+Identifiers are spelled out: `direction` not `dir`, `destination` not `dest`, `context` not `ctx`, `character` not `char`, `position` not `i`, `toCoordinates` / `toIndex` not `toXY` / `toIdx`.
+
+The only short names left are `x` and `y` for grid coordinates, where the single letters are the convention rather than a contraction.
 
 ## Deferred decisions
 

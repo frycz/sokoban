@@ -15,99 +15,106 @@ const COLORS = {
  * thing the host needs, and it knows nothing beyond the state it is handed.
  */
 export function createRenderer(canvas: HTMLCanvasElement): (state: State) => void {
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Canvas 2D context is unavailable')
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Canvas 2D context is unavailable')
 
   return function render(state: State): void {
     const { level, player, boxes } = state
 
-    const dpr = window.devicePixelRatio || 1
+    const pixelRatio = window.devicePixelRatio || 1
     const cssWidth = canvas.clientWidth
     const cssHeight = canvas.clientHeight
-    canvas.width = Math.round(cssWidth * dpr)
-    canvas.height = Math.round(cssHeight * dpr)
+    canvas.width = Math.round(cssWidth * pixelRatio)
+    canvas.height = Math.round(cssHeight * pixelRatio)
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, cssWidth, cssHeight)
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+    context.clearRect(0, 0, cssWidth, cssHeight)
 
     const tile = Math.floor(Math.min(cssWidth / level.width, cssHeight / level.height))
     const originX = Math.floor((cssWidth - tile * level.width) / 2)
     const originY = Math.floor((cssHeight - tile * level.height) / 2)
-    const at = (i: number) => ({
-      x: originX + (i % level.width) * tile,
-      y: originY + Math.floor(i / level.width) * tile,
+    const topLeftOf = (position: number) => ({
+      x: originX + (position % level.width) * tile,
+      y: originY + Math.floor(position / level.width) * tile,
     })
 
-    for (let i = 0; i < level.walls.length; i++) {
-      const { x, y } = at(i)
+    for (let position = 0; position < level.walls.length; position++) {
+      const { x, y } = topLeftOf(position)
 
-      if (level.walls[i]) {
+      if (level.walls[position]) {
         // Only walls touching the playfield are drawn, so the unreachable
         // void around the level stays empty instead of becoming a slab.
-        if (!touchesFloor(level, i)) continue
-        ctx.fillStyle = COLORS.wall
-        ctx.fillRect(x, y, tile, tile)
-        ctx.fillStyle = COLORS.wallEdge
-        ctx.fillRect(x, y, tile, Math.max(1, Math.round(tile * 0.12)))
+        if (!touchesFloor(level, position)) continue
+        context.fillStyle = COLORS.wall
+        context.fillRect(x, y, tile, tile)
+        context.fillStyle = COLORS.wallEdge
+        context.fillRect(x, y, tile, Math.max(1, Math.round(tile * 0.12)))
         continue
       }
 
-      ctx.fillStyle = COLORS.floor
-      ctx.fillRect(x, y, tile, tile)
+      context.fillStyle = COLORS.floor
+      context.fillRect(x, y, tile, tile)
 
-      if (level.goals.has(i)) {
-        ctx.fillStyle = COLORS.goal
-        const r = tile * 0.16
-        ctx.beginPath()
-        ctx.arc(x + tile / 2, y + tile / 2, r, 0, Math.PI * 2)
-        ctx.fill()
+      if (level.goals.has(position)) {
+        context.fillStyle = COLORS.goal
+        context.beginPath()
+        context.arc(x + tile / 2, y + tile / 2, tile * 0.16, 0, Math.PI * 2)
+        context.fill()
       }
     }
 
     for (const box of boxes) {
-      const { x, y } = at(box)
-      const pad = tile * 0.14
-      ctx.fillStyle = level.goals.has(box) ? COLORS.boxDone : COLORS.box
-      roundRect(ctx, x + pad, y + pad, tile - pad * 2, tile - pad * 2, tile * 0.16)
-      ctx.fill()
+      const { x, y } = topLeftOf(box)
+      const padding = tile * 0.14
+      context.fillStyle = level.goals.has(box) ? COLORS.boxDone : COLORS.box
+      roundedRectanglePath(
+        context,
+        x + padding,
+        y + padding,
+        tile - padding * 2,
+        tile - padding * 2,
+        tile * 0.16
+      )
+      context.fill()
     }
 
-    const { x, y } = at(player)
-    ctx.fillStyle = COLORS.player
-    ctx.beginPath()
-    ctx.arc(x + tile / 2, y + tile / 2, tile * 0.33, 0, Math.PI * 2)
-    ctx.fill()
+    const { x, y } = topLeftOf(player)
+    context.fillStyle = COLORS.player
+    context.beginPath()
+    context.arc(x + tile / 2, y + tile / 2, tile * 0.33, 0, Math.PI * 2)
+    context.fill()
   }
 }
 
 /** True if any of the 8 surrounding cells is playable floor. */
-function touchesFloor(level: Level, i: number): boolean {
-  const x = i % level.width
-  const y = Math.floor(i / level.width)
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      const nx = x + dx
-      const ny = y + dy
-      if (nx < 0 || nx >= level.width || ny < 0 || ny >= level.height) continue
-      if (!level.walls[ny * level.width + nx]) return true
+function touchesFloor(level: Level, position: number): boolean {
+  const x = position % level.width
+  const y = Math.floor(position / level.width)
+  for (let offsetY = -1; offsetY <= 1; offsetY++) {
+    for (let offsetX = -1; offsetX <= 1; offsetX++) {
+      const neighbourX = x + offsetX
+      const neighbourY = y + offsetY
+      if (neighbourX < 0 || neighbourX >= level.width) continue
+      if (neighbourY < 0 || neighbourY >= level.height) continue
+      if (!level.walls[neighbourY * level.width + neighbourX]) return true
     }
   }
   return false
 }
 
-function roundRect(
-  ctx: CanvasRenderingContext2D,
+function roundedRectanglePath(
+  context: CanvasRenderingContext2D,
   x: number,
   y: number,
-  w: number,
-  h: number,
-  r: number
+  width: number,
+  height: number,
+  radius: number
 ): void {
-  ctx.beginPath()
-  ctx.moveTo(x + r, y)
-  ctx.arcTo(x + w, y, x + w, y + h, r)
-  ctx.arcTo(x + w, y + h, x, y + h, r)
-  ctx.arcTo(x, y + h, x, y, r)
-  ctx.arcTo(x, y, x + w, y, r)
-  ctx.closePath()
+  context.beginPath()
+  context.moveTo(x + radius, y)
+  context.arcTo(x + width, y, x + width, y + height, radius)
+  context.arcTo(x + width, y + height, x, y + height, radius)
+  context.arcTo(x, y + height, x, y, radius)
+  context.arcTo(x, y, x + width, y, radius)
+  context.closePath()
 }

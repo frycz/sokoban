@@ -3,7 +3,7 @@
  * mapping belongs to the host. Undo and reset are history operations, so
  * they live in the host too.
  */
-export type Dir = 'up' | 'down' | 'left' | 'right'
+export type Direction = 'up' | 'down' | 'left' | 'right'
 
 /** Static level data. Never changes once parsed. */
 export type Level = {

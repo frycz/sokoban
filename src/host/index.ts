@@ -1,22 +1,22 @@
 import { parse } from '../core/level'
 import { isSolved } from '../core/rules'
 import { step } from '../core/step'
-import type { Dir, State } from '../core/types'
+import type { Direction, State } from '../core/types'
 import { createRenderer } from '../render/canvas'
 import { LEVEL } from './level-data'
 
 /** The host has three commands, so the tag belongs here rather than in core. */
-type Command = { type: 'move'; dir: Dir } | { type: 'undo' } | { type: 'reset' }
+type Command = { type: 'move'; direction: Direction } | { type: 'undo' } | { type: 'reset' }
 
 const BINDINGS: Record<string, Command> = {
-  ArrowUp: { type: 'move', dir: 'up' },
-  ArrowDown: { type: 'move', dir: 'down' },
-  ArrowLeft: { type: 'move', dir: 'left' },
-  ArrowRight: { type: 'move', dir: 'right' },
-  w: { type: 'move', dir: 'up' },
-  s: { type: 'move', dir: 'down' },
-  a: { type: 'move', dir: 'left' },
-  d: { type: 'move', dir: 'right' },
+  ArrowUp: { type: 'move', direction: 'up' },
+  ArrowDown: { type: 'move', direction: 'down' },
+  ArrowLeft: { type: 'move', direction: 'left' },
+  ArrowRight: { type: 'move', direction: 'right' },
+  w: { type: 'move', direction: 'up' },
+  s: { type: 'move', direction: 'down' },
+  a: { type: 'move', direction: 'left' },
+  d: { type: 'move', direction: 'right' },
   z: { type: 'undo' },
   u: { type: 'undo' },
   r: { type: 'reset' },
@@ -42,7 +42,7 @@ const current = () => history[history.length - 1]
 function run(command: Command): void {
   switch (command.type) {
     case 'move': {
-      const next = step(current(), command.dir)
+      const next = step(current(), command.direction)
       if (next === current()) return // illegal move, nothing to record
       history.push(next)
       break
