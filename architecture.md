@@ -5,18 +5,19 @@ Three modules. The game logic is a pure state transition function; everything el
 ```
 index.html
 src/core/      types.ts, level.ts, step.ts, rules.ts    pure, no DOM, no I/O
-src/host/      index.ts, level-data.ts                  history stack, keybindings, dispatch
+src/host/      index.ts, history.ts, level-data.ts      history stack, keybindings, dispatch
 src/render/    canvas.ts                                (state) => draw
 ```
 
-TypeScript, built with Vite. `npm run dev` to play, `npm run typecheck` to check.
+TypeScript, built with Vite. `npm run dev` to play, `npm run verify` to check
+everything (format, lint, knip, types, tests).
 
 ## `core/` — pure, no DOM, no I/O
 
 | File       | Exports                                                                                                                                                                                                                            |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `types.ts` | `PlayerMoveDirection`, `Level`, `LevelState`                                                                                                                                                                                       |
-| `level.ts` | `parseStringToLevelState(xsb: string)` → the initial `LevelState`                                                                                                                                                                         |
+| `level.ts` | `parseStringToLevelState(xsb: string)` → the initial `LevelState`                                                                                                                                                                  |
 | `step.ts`  | `step(levelState: LevelState, playerMoveDirection: PlayerMoveDirection): LevelState` — returns the same state for illegal moves                                                                                                    |
 | `rules.ts` | `isSolved(levelState)`, `getNextPosition(level, position, playerMoveDirection)`, `isPositionValid` (built from `isPositionOnLevel` + `isPositionWall`), `isPositionBox`, `isPositionPlayer`, `isPositionFree`, `updateBoxPosition` |
 
@@ -92,11 +93,16 @@ Levels are parsed from standard XSB text, so existing level sets work without co
 
 ## `host/` — the only mutable thing in the system
 
-Owns a `LevelState[]` history stack — the only mutable value in the program. Maps keys to a command, calls `step`, pushes the result, and handles undo by popping and reset by truncating to the first entry. Calls the renderer after each change. No game rules live here.
+Split in two, along the DOM line:
+
+- `history.ts` — `createHistory(initial)` owns a `LevelState[]` stack, the only mutable value in the program. Calls `step`, pushes the result, undoes by popping and resets by truncating to the first entry. `run(command)` returns whether anything changed. No DOM, so it is unit-testable.
+- `index.ts` — element lookup, keybindings, and the status line. Re-renders when `run` reports a change.
+
+No game rules live in either.
 
 Undo is deliberately outside engine state. Because `step` is pure, keeping a stack of previous states gives undo, redo, and replay for free, and the engine stays simple.
 
-Illegal moves are detected by identity: `step` returns the same object when nothing changed, so `next === current()` means the move was rejected and no history entry is recorded.
+Illegal moves are detected by identity: `step` returns the same object when nothing changed, so `next === current()` means the move was rejected and no history entry is recorded. That identity contract is load-bearing, and `step.test.ts` asserts it with `toBe` rather than `toEqual`.
 
 Keys: arrows or WASD to move, Z or U to undo, R to reset.
 
@@ -112,6 +118,27 @@ Full redraw every time is deliberate: it keeps the renderer a pure function of s
 - Input mapping lives only in `host/`. `core/` never sees a keycode — it takes a `PlayerMoveDirection`.
 - Undo lives only in `host/`, outside engine state.
 - `core/` imports nothing from `host/` or `render/`, so it runs unchanged in Node tests, a terminal front end, or a solver.
+
+## Tests
+
+Vitest, no environment and no mocks — every test is a plain function call. Tests sit next to the code as `*.test.ts`. `npm test` runs them; `npm run test:watch` watches.
+
+Vitest is pinned to 2.x because 3+ requires Vite 6, and this project is on Vite 5. The two move together when Vite does.
+
+`core/test-helpers.ts` keeps the fixtures readable by making XSB the test language in both directions:
+
+| Helper                      | Purpose                                                                                                     |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `xsb(...lines)`             | joins rows into level text — leading spaces are significant, so rows are listed rather than indented inline |
+| `toXsb(levelState)`         | renders a state back to XSB, so expectations are boards instead of position sets                            |
+| `play(levelState, lurd)`    | replays standard LURD notation                                                                              |
+| `openLevelState(w, h, ...)` | a wall-free grid, for states the parser cannot produce                                                      |
+
+`toXsb` makes a push assertion one string instead of hand-built `Set`s and index arithmetic, and round-tripping cross-checks the parser against itself. `openLevelState` exists because the flood fill seals every parsed level in walls, so the row-wrap guard in `getNextPosition` can only be exercised on a hand-built level with a player on column 0.
+
+`host/level-data.test.ts` replays a 97-push LURD solution of the shipped level and asserts `isSolved`, plus that the state one move short is _not_ solved. One test, but it covers the parser, both move and push paths and all four directions against a real board.
+
+The suite is checked against deliberate regressions, not just written: dropping the bounds check in `getNextPosition`, ignoring what is behind a pushed box, replacing the flood fill with the raw open map, making `isSolved` vacuous, and letting undo run past the start each fail at least one test.
 
 ## Naming
 

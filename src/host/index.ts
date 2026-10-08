@@ -1,14 +1,8 @@
 import { parseStringToLevelState } from '../core/level'
 import { isSolved } from '../core/rules'
-import { step } from '../core/step'
-import type { LevelState, PlayerMoveDirection } from '../core/types'
 import { createRenderer } from '../render/canvas'
+import { createHistory, type Command } from './history'
 import { LEVEL } from './level-data'
-
-type Command =
-  | { type: 'move'; playerMoveDirection: PlayerMoveDirection }
-  | { type: 'undo' }
-  | { type: 'reset' }
 
 const BINDINGS: Record<string, Command> = {
   ArrowUp: { type: 'move', playerMoveDirection: 'up' },
@@ -38,48 +32,12 @@ const canvas = requireElement<HTMLCanvasElement>('#board')
 const statusLine = requireElement<HTMLElement>('#status')
 
 const render = createRenderer(canvas)
-const initial = parseStringToLevelState(LEVEL)
-
-const history: LevelState[] = [initial]
-const current = () => history[history.length - 1]
-
-function run(command: Command): void {
-  switch (command.type) {
-    case 'move': {
-      const next = step(current(), command.playerMoveDirection)
-
-      if (next === current()) {
-        return
-      }
-
-      history.push(next)
-      break
-    }
-    case 'undo': {
-      if (history.length === 1) {
-        return
-      }
-
-      history.pop()
-      break
-    }
-    case 'reset': {
-      if (history.length === 1) {
-        return
-      }
-
-      history.length = 1
-      break
-    }
-  }
-
-  update()
-}
+const history = createHistory(parseStringToLevelState(LEVEL))
 
 function update(): void {
-  const levelState = current()
+  const levelState = history.current()
   render(levelState)
-  const moves = history.length - 1
+  const moves = history.moveCount()
   statusLine.textContent = isSolved(levelState)
     ? `Solved in ${moves} moves. Press R to play again.`
     : `Moves: ${moves}   ·   arrows/WASD to move, Z to undo, R to reset`
@@ -97,7 +55,10 @@ window.addEventListener('keydown', (event) => {
   }
 
   event.preventDefault()
-  run(command)
+
+  if (history.run(command)) {
+    update()
+  }
 })
 
 window.addEventListener('resize', update)
