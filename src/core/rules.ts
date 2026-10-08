@@ -7,11 +7,11 @@ const DELTAS: Record<PlayerMoveDirection, readonly [number, number]> = {
   right: [1, 0],
 }
 
-export function isPositionOnMap(level: Level, position: number): boolean {
+function isPositionOnMap(level: Level, position: number): boolean {
   return position >= 0 && position < level.width * level.height
 }
 
-export function isPositionWall(level: Level, position: number): boolean {
+function isPositionWall(level: Level, position: number): boolean {
   return level.wallMap[position]
 }
 
@@ -30,11 +30,11 @@ export function isPositionBox(levelState: LevelState, position: number): boolean
   return levelState.boxPositions.has(position)
 }
 
-export function isPositionValid(level: Level, position: number): boolean {
+function isPositionValid(level: Level, position: number): boolean {
   return isPositionOnMap(level, position) && !isPositionWall(level, position)
 }
 
-export function isPositionPlayer(levelState: LevelState, position: number): boolean {
+function isPositionPlayer(levelState: LevelState, position: number): boolean {
   return levelState.playerCurrentPosition === position
 }
 
