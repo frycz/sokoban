@@ -10,8 +10,8 @@ src/core/       types.ts, level.ts, step.ts, rules.ts   pure, no DOM, no I/O
 src/host/       index.ts, history.ts, level-data.ts     history stack, keybindings, dispatch
 src/render/     canvas.ts, colors.ts, tile-roles.ts     (state) => draw
 src/editor/     document.ts, xsb.ts, validate.ts,       level mode, same pure/shell/draw split
-                session.ts, layout.ts, canvas.ts,
-                level-mode.ts, dom.ts, index.ts
+                session.ts, layout.ts, canvas.ts,       plus autosave:
+                level-mode.ts, dom.ts, index.ts,        stored-state.ts, storage.ts
 src/editor/skin/ sheet.ts, skin.ts, roles.ts,           skin mode
                  palette.ts, preview.ts, atlas.ts
 ```
@@ -139,24 +139,28 @@ Same three-layer split as the game, and a strict DAG. Each arrow points from a m
 core/rules.ts   core/level.ts
       ↑               ↑
 document.ts ← xsb.ts ← validate.ts        pure
-      ↑ ↑                    ↑
-layout.ts │                  │            pure
-      ↑   │                  │
-      │  session.ts ─────────┤            mutable, no DOM
+      ↑ ↑        ↑           ↑
+layout.ts │  stored-state.ts │            pure
+      ↑   │       ↑          │
+      │  session.ts          │            mutable, no DOM
       │        │             │
-    canvas.ts  │             │            (document) => draw
-        └──────┴─────────────┴→ index.ts  the only DOM
+    canvas.ts  │  storage.ts │            the only localStorage, a leaf
+        └──────┴─────┴───────┴→ index.ts  the only DOM
 ```
 
-| File          | Role                                                                                                            |
-| ------------- | --------------------------------------------------------------------------------------------------------------- |
-| `document.ts` | `EditorDocument`, `Cell`, `Brush`, and the pure edits: `createEmptyDocument`, `paintDocument`, `resizeDocument` |
-| `xsb.ts`      | `parseXsbToDocument` / `formatDocumentAsXsb` — the only text I/O                                                |
-| `validate.ts` | `validateDocument(document)` → problems, counts, `isPlayable`                                                   |
-| `session.ts`  | the undo stack, the editor's one mutable value. No DOM                                                          |
-| `layout.ts`   | tile size, origin, and pixel → cell. Pure                                                                       |
-| `canvas.ts`   | `(document, hoverPosition) => draw`. No logic                                                                   |
-| `index.ts`    | palette, pointer, size inputs, XSB panel. The only file that touches the DOM                                    |
+| File              | Role                                                                                                            |
+| ----------------- | --------------------------------------------------------------------------------------------------------------- |
+| `document.ts`     | `EditorDocument`, `Cell`, `Brush`, and the pure edits: `createEmptyDocument`, `paintDocument`, `resizeDocument` |
+| `xsb.ts`          | `parseXsbToDocument` / `formatDocumentAsXsb` — the only text I/O                                                |
+| `validate.ts`     | `validateDocument(document)` → problems, counts, `isPlayable`                                                   |
+| `stored-state.ts` | encode / decode of what autosave keeps, for both modes. Pure                                                    |
+| `session.ts`      | the undo stack, the editor's one mutable value. No DOM                                                          |
+| `layout.ts`       | tile size, origin, and pixel → cell. Pure                                                                       |
+| `canvas.ts`       | `(document, hoverPosition) => draw`. No logic                                                                   |
+| `storage.ts`      | the two `localStorage` keys, every call guarded. Imports nothing                                                |
+| `index.ts`        | palette, pointer, size inputs, XSB panel. The only file that touches the DOM                                    |
+
+`stored-state.ts` also reads `skin/`, which is the one place the level half of the editor and the skin half meet outside a mode module: autosave covers both, so the codec has to know both shapes.
 
 ### The editor does not use `LevelState`
 
@@ -183,6 +187,32 @@ The severities are a real line, not a mood: `error` means `parseStringToLevelSta
 ### Undo coalesces per stroke
 
 `session.beginStroke()` opens an undo entry and every `paint` until the next one folds into it, so dragging across twenty cells undoes once. `paintDocument` returns the same object when the cell already looked like that, so a stroke that changed nothing records nothing — the same identity contract `step` has with the host.
+
+### Every change is autosaved
+
+The editor writes to `localStorage` on every edit and opens where it was left. Two keys, `sokoban.editor.level` and `sokoban.editor.skin`, each written only by the mode that owns that state, so the two modes never coordinate a read-modify-write of one shared record.
+
+Autosave hangs off each mode's `update()` — the call every edit already ends with — rather than being remembered at each of the dozen places that change something. Each mode holds the text it last stored and compares before writing, which keeps a redraw that changed nothing (a hover, a resize, a mode switch) from writing at all and makes the common case one string compare. No debounce: a level is a few kilobytes of XSB, cheap enough to store per painted cell.
+
+The undo stack does not persist. A reload is a new session, and the document is the work.
+
+#### The level is stored as XSB, with `-` for floor
+
+Storing it in the format the editor already reads and writes means there is no second level codec to keep in step. The substitution is the catch: `parseXsbToDocument` trims blank lines off the top and bottom, so a document whose first row is all floor would come back a row shorter. `-` is the XSB alphabet's own explicit floor, so no row is ever blank and the round trip is exact. `stored-state.test.ts` asserts it on exactly that document.
+
+#### A skin is stored with its sheet
+
+A binding is a tile index, which means nothing without the exact image it was cut from, so the sheet travels with the draft as a data url. That is also the string the sidebar thumbnails use, which is why there is no object url left to revoke. Restoring keeps the bindings — unlike loading a sheet, which clears them, because that is new art under the same indices.
+
+A large sheet can exceed the quota. The fallback is to store the draft without the sheet and without the bindings and say so in the status line: the settings survive, the art has to be loaded again. `decodeStoredSkin` drops the bindings whenever the sheet is absent in any case, so a record written before a quota failure — or hand-edited in devtools — cannot come back pointing at nothing.
+
+Nothing is migrated. A record without the current `version` is ignored and the editor opens blank, which for an internal tool's autosave beats guessing at what an older shape meant.
+
+#### Clear storage resets the editor
+
+Clearing the keys without resetting the panels would be a lie, because the next edit autosaves and the state is back. So the button does both, behind a confirm, and `index.ts` owns it: clearing storage is not a level or a skin concern, which is why `EditorMode` has a `reset` for each mode to discard its own half. Each reset moves its "last stored" text along with it rather than writing, so storage stays empty until the next real edit. The level reset goes through `session.replace`, so it lands on the undo stack and Undo brings the level back.
+
+Writes are guarded rather than assumed: storage access throws outright in some embeddings, and a Safari private window accepts reads while refusing writes. A refusal is reported in the status line and the editor keeps working unsaved.
 
 ## `editor/skin/` — binds sprites to roles, exports an atlas
 
@@ -294,6 +324,7 @@ Packing also ships only what the skin uses, so a skin cut from a 500-tile sheet 
 - `editor/` imports nothing from `host/`, and `host/` imports nothing from `editor/`. The two front ends meet only in `core/` and in the leaves of `render/`.
 - `render/colors.ts` and `render/tile-roles.ts` are leaves that import nothing. They exist so the level you draw looks like the level you play, and so the editor and the game agree on what a role is, without the editor depending on the game's renderer.
 - The DOM lives only in `host/index.ts`, `editor/index.ts`, `editor/level-mode.ts` and `editor/skin-mode.ts`. Everything under `editor/skin/` is pure or draws into a canvas it was handed.
+- `localStorage` lives only in `editor/storage.ts`, which holds the keys and swallows the browser's failure modes. What goes in them is `editor/stored-state.ts`, which is pure and tested; the game stores nothing.
 - `editor/index.ts` is a mode switch and nothing else: it owns which panel is visible and routes keys and resizes to it.
 
 ## Tests

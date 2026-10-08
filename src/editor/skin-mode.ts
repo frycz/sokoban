@@ -1,6 +1,14 @@
-import { requireElement, downloadBlob, type EditorMode } from './dom'
+import {
+  requireElement,
+  downloadBlob,
+  readDataUrlAsImageBitmap,
+  readFileAsDataUrl,
+  type EditorMode,
+} from './dom'
 import { computeGridLayout, getPositionAtPixel } from './layout'
 import type { Session } from './session'
+import { readStoredText, writeStoredText } from './storage'
+import { decodeStoredSkin, encodeStoredSkin } from './stored-state'
 import { getAtlasSize, packSkinAtlas } from './skin/atlas'
 import { createPalettePainter } from './skin/palette'
 import { createSkinPreviewPainter } from './skin/preview'
@@ -75,12 +83,22 @@ export function createSkinMode(session: Session): EditorMode {
   const paintPalette = createPalettePainter(paletteCanvas)
   const paintPreview = createSkinPreviewPainter(previewCanvas)
 
-  let draft: SkinDraft = createEmptySkinDraft()
+  const stored = decodeStoredSkin(readStoredText('skin'))
+
+  let draft: SkinDraft = stored?.draft ?? createEmptySkinDraft()
   let sheetImage: ImageBitmap | null = null
-  let sheetObjectUrl: string | null = null
+  let sheetDataUrl: string | null = stored?.sheetDataUrl ?? null
   let selectedTileIndex = UNBOUND
+  // As in level mode: the draft came out of storage, so the two start in step
+  // and nothing is written back until the draft actually differs.
+  let savedSkin = encodeStoredSkin(draft, sheetDataUrl)
+  let storageNote: string | null = null
 
   syncSheetInputs()
+
+  if (sheetDataUrl !== null) {
+    void restoreSheet(sheetDataUrl)
+  }
 
   function syncSheetInputs(): void {
     tileWidthInput.value = String(draft.sheet.tileWidth)
@@ -173,12 +191,12 @@ export function createSkinMode(session: Session): EditorMode {
         const thumbnail = document.createElement('span')
         thumbnail.className = 'tile'
 
-        if (sheetImage && sheetObjectUrl && grid && tileIndex !== UNBOUND) {
+        if (sheetImage && sheetDataUrl && grid && tileIndex !== UNBOUND) {
           const rect = getSourceTileRect(draft.sheet, grid, tileIndex)
 
           if (rect.width > 0) {
             const scale = THUMBNAIL_SIZE / rect.width
-            thumbnail.style.backgroundImage = `url(${sheetObjectUrl})`
+            thumbnail.style.backgroundImage = `url("${sheetDataUrl}")`
             thumbnail.style.backgroundSize = `${sheetImage.width * scale}px ${sheetImage.height * scale}px`
             thumbnail.style.backgroundPosition = `${-rect.x * scale}px ${-rect.y * scale}px`
           }
@@ -209,10 +227,45 @@ export function createSkinMode(session: Session): EditorMode {
     }
   }
 
+  /**
+   * Autosave rides along with the redraw, as it does in level mode. The sheet
+   * is stored with the draft because a binding is a tile index, which means
+   * nothing without the exact image it was cut from.
+   */
+  function persist(): void {
+    const text = encodeStoredSkin(draft, sheetDataUrl)
+
+    if (text === savedSkin) {
+      return
+    }
+
+    savedSkin = text
+
+    if (writeStoredText('skin', text)) {
+      storageNote = null
+
+      return
+    }
+
+    // The sheet is what makes the record big, and bindings mean nothing without
+    // it, so fall back to storing the settings alone rather than nothing.
+    const withoutSheet = encodeStoredSkin(clearBindings(draft), null)
+    savedSkin = withoutSheet
+    storageNote = writeStoredText('skin', withoutSheet)
+      ? 'Sheet too large for storage — settings are saved, bindings are not.'
+      : 'Not being saved — browser storage is unavailable.'
+  }
+
   function update(): void {
+    persist()
     paintPalette(sheetImage, draft.sheet, draft.isPixelated, selectedTileIndex)
     paintPreview(session.current(), draft, sheetImage)
     renderReport()
+
+    if (storageNote !== null) {
+      setMessage(storageNote, 'warning')
+    }
+
     renderRoleList()
 
     const canExport = sheetImage !== null && isSkinComplete(draft)
@@ -231,14 +284,13 @@ export function createSkinMode(session: Session): EditorMode {
 
   async function loadSheet(file: File): Promise<void> {
     try {
-      const loaded = await createImageBitmap(file)
-
-      if (sheetObjectUrl) {
-        URL.revokeObjectURL(sheetObjectUrl)
-      }
+      const [loaded, dataUrl] = await Promise.all([
+        createImageBitmap(file),
+        readFileAsDataUrl(file),
+      ])
 
       sheetImage = loaded
-      sheetObjectUrl = URL.createObjectURL(file)
+      sheetDataUrl = dataUrl
       // Tile indices only mean something against one grid, so a new sheet
       // starts from no bindings rather than art that silently moved.
       draft = clearBindings(draft)
@@ -248,6 +300,37 @@ export function createSkinMode(session: Session): EditorMode {
       report.replaceChildren()
       setMessage(`Could not read ${file.name} as an image.`, 'error')
     }
+  }
+
+  /**
+   * Reopening the editor. Unlike loading a sheet this keeps the bindings: the
+   * stored image is byte for byte the one they were made against, so the
+   * indices still point at the same art.
+   */
+  async function restoreSheet(dataUrl: string): Promise<void> {
+    try {
+      sheetImage = await readDataUrlAsImageBitmap(dataUrl)
+    } catch {
+      // Whatever was stored no longer decodes, so the bindings point at
+      // nothing: drop both rather than show indices into a missing sheet.
+      sheetDataUrl = null
+      draft = clearBindings(draft)
+    }
+
+    update()
+  }
+
+  /** Called after storage has been cleared; see level mode's `reset`. */
+  function reset(): void {
+    draft = createEmptySkinDraft()
+    sheetImage = null
+    sheetDataUrl = null
+    selectedTileIndex = UNBOUND
+    savedSkin = encodeStoredSkin(draft, sheetDataUrl)
+    storageNote = null
+    // So that picking the same sheet again still fires a change event.
+    fileInput.value = ''
+    syncSheetInputs()
   }
 
   function readSheetSettings(): void {
@@ -299,6 +382,11 @@ export function createSkinMode(session: Session): EditorMode {
   nameInput.addEventListener('input', () => {
     draft = { ...draft, name: nameInput.value }
   })
+
+  // The name is the one edit that does not redraw anything, so it is the one
+  // edit autosave has to be asked for by hand — on `change` rather than per
+  // keystroke, because each save re-encodes the whole sheet with it.
+  nameInput.addEventListener('change', persist)
 
   paletteCanvas.addEventListener('pointerdown', (event) => {
     if (!sheetImage) {
@@ -394,5 +482,5 @@ export function createSkinMode(session: Session): EditorMode {
     setMessage(`Atlas is ${size.width}×${size.height} px.`, 'ok')
   })
 
-  return { update }
+  return { update, reset }
 }

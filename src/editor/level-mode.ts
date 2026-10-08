@@ -4,10 +4,13 @@ import {
   MAX_DOCUMENT_SIZE,
   MIN_DOCUMENT_SIZE,
   type Brush,
+  type EditorDocument,
 } from './document'
 import { requireElement, type EditorMode } from './dom'
 import { computeGridLayout, getPositionAtPixel } from './layout'
 import type { Session } from './session'
+import { readStoredText, writeStoredText } from './storage'
+import { decodeStoredLevel, encodeStoredLevel } from './stored-state'
 import { validateDocument } from './validate'
 import { formatDocumentAsXsb, parseXsbToDocument } from './xsb'
 
@@ -22,8 +25,19 @@ const BRUSH_OF_KEY: Record<string, Brush | undefined> = {
   '5': 'player',
 }
 
-export function createEmptyLevelDocument() {
+function createEmptyLevelDocument(): EditorDocument {
   return createEmptyDocument(DEFAULT_WIDTH, DEFAULT_HEIGHT)
+}
+
+/**
+ * What the editor opens on: whatever was last autosaved, or a blank level. The
+ * undo stack deliberately does not persist — a reload is a new session, and the
+ * document is the work.
+ */
+export function createInitialLevelDocument(): EditorDocument {
+  return (
+    decodeStoredLevel(readStoredText('level')) ?? createEmptyLevelDocument()
+  )
 }
 
 export function createLevelMode(session: Session): EditorMode {
@@ -43,6 +57,11 @@ export function createLevelMode(session: Session): EditorMode {
   let selectedBrush: Brush = 'floor'
   let hoverPosition = -1
   let isPainting = false
+  // What storage already holds. The session was seeded from it, so the editor
+  // starts in step and writes nothing until the document actually differs —
+  // which is also what keeps hovering a cell, or a reset, from rewriting it.
+  let savedLevel = encodeStoredLevel(session.current())
+  let hasStorageFailed = false
 
   for (const input of [widthInput, heightInput]) {
     input.min = String(MIN_DOCUMENT_SIZE)
@@ -54,8 +73,26 @@ export function createLevelMode(session: Session): EditorMode {
     heightInput.value = String(session.current().height)
   }
 
+  /**
+   * Every edit lands here, so autosave rides along with the redraw rather than
+   * being remembered at each of the places that change the document. Writing a
+   * few kilobytes of XSB is cheap enough to do per painted cell, and the
+   * comparison above means an unchanged document costs one string compare.
+   */
+  function persist(): void {
+    const text = encodeStoredLevel(session.current())
+
+    if (text === savedLevel) {
+      return
+    }
+
+    savedLevel = text
+    hasStorageFailed = !writeStoredText('level', text)
+  }
+
   function update(): void {
     const editorDocument = session.current()
+    persist()
     render(editorDocument, hoverPosition)
 
     const validation = validateDocument(editorDocument)
@@ -73,6 +110,13 @@ export function createLevelMode(session: Session): EditorMode {
       const line = document.createElement('p')
       line.className = problem.severity
       line.textContent = problem.message
+      report.append(line)
+    }
+
+    if (hasStorageFailed) {
+      const line = document.createElement('p')
+      line.className = 'warning'
+      line.textContent = 'Not being saved — browser storage is unavailable.'
       report.append(line)
     }
   }
@@ -203,6 +247,22 @@ export function createLevelMode(session: Session): EditorMode {
     })
   }
 
+  /**
+   * Called after storage has been cleared, so the fresh document is already
+   * what is stored: `savedLevel` is moved along with it rather than written, and
+   * storage stays empty until the next real edit.
+   *
+   * The reset goes through `replace`, so it lands on the undo stack like any
+   * other edit and Undo brings the level back.
+   */
+  function reset(): void {
+    session.replace(createEmptyLevelDocument())
+    savedLevel = encodeStoredLevel(session.current())
+    hasStorageFailed = false
+    xsbText.value = ''
+    syncSizeInputs()
+  }
+
   function handleKey(event: KeyboardEvent): boolean {
     const brush = BRUSH_OF_KEY[event.key]
 
@@ -225,5 +285,5 @@ export function createLevelMode(session: Session): EditorMode {
   selectBrush(selectedBrush)
   syncSizeInputs()
 
-  return { update, handleKey }
+  return { update, handleKey, reset }
 }

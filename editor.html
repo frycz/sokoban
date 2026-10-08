@@ -82,6 +82,16 @@
         border-bottom: 1px solid #2c3444;
         padding-bottom: 12px;
       }
+      /* Pushed away from the mode switch: it resets both panels, so it should
+         not sit where a mode button is expected. */
+      button.danger {
+        margin-left: auto;
+        color: #7d8699;
+      }
+      button.danger:hover {
+        color: #e07a7a;
+        border-color: #e07a7a;
+      }
       button {
         font: inherit;
         color: inherit;
@@ -222,6 +232,9 @@
     <div class="row modes">
       <button type="button" id="mode-level">Level</button>
       <button type="button" id="mode-skin">Skin</button>
+      <button type="button" id="clear-storage" class="danger">
+        Clear storage
+      </button>
     </div>
 
     <section class="mode" id="level-mode">

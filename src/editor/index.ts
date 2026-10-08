@@ -1,11 +1,15 @@
 import { requireElement, type EditorMode } from './dom'
-import { createEmptyLevelDocument, createLevelMode } from './level-mode'
+import { createInitialLevelDocument, createLevelMode } from './level-mode'
 import { createSession } from './session'
 import { createSkinMode } from './skin-mode'
+import { clearStoredEditor } from './storage'
 
 type ModeName = 'level' | 'skin'
 
-const session = createSession(createEmptyLevelDocument())
+// The editor opens on whatever was last autosaved. The level is read here
+// because the session is built from it; the skin reads its own slice. Each mode
+// then writes only its own, which is why there are two keys — see `storage.ts`.
+const session = createSession(createInitialLevelDocument())
 
 // One session, two modes: the skin preview renders the level being drawn, so
 // the two panels share the document rather than each holding their own.
@@ -42,6 +46,26 @@ function activate(mode: ModeName): void {
 for (const name of ['level', 'skin'] as const) {
   buttons[name].addEventListener('click', () => activate(name))
 }
+
+// Clearing storage without resetting the editor would be a lie: the next edit
+// autosaves and the state is back. So it does both, and asks first — the work
+// in the two panels is the only copy there is.
+requireElement<HTMLButtonElement>('#clear-storage').addEventListener(
+  'click',
+  () => {
+    if (!window.confirm('Clear saved state and start over?')) {
+      return
+    }
+
+    clearStoredEditor()
+
+    for (const name of ['level', 'skin'] as const) {
+      modes[name].reset()
+    }
+
+    modes[activeMode].update()
+  },
+)
 
 window.addEventListener('keydown', (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) {
