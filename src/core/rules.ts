@@ -20,6 +20,22 @@ export function isPositionWall(level: Level, position: number): boolean {
   return level.wallMap[position]
 }
 
+/**
+ * A copy of `boxPositions` with one box moved. Copying is what keeps `step`
+ * pure, and it is cheap because the set holds one entry per box rather than
+ * one per cell.
+ */
+export function updateBoxPosition(
+  boxPositions: ReadonlySet<number>,
+  currentBoxPosition: number,
+  nextBoxPosition: number
+): Set<number> {
+  const updatedBoxPositions = new Set(boxPositions)
+  updatedBoxPositions.delete(currentBoxPosition)
+  updatedBoxPositions.add(nextBoxPosition)
+  return updatedBoxPositions
+}
+
 /** True if a box currently sits on `position`. */
 export function isPositionBox(levelState: LevelState, position: number): boolean {
   return levelState.boxPositions.has(position)

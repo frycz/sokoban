@@ -18,7 +18,7 @@ TypeScript, built with Vite. `npm run dev` to play, `npm run typecheck` to check
 | `types.ts` | `PlayerMoveDirection`, `Level`, `LevelState` |
 | `level.ts` | `parse(xsb: string)` → `Level` plus the initial `LevelState` |
 | `step.ts` | `step(levelState: LevelState, playerMoveDirection: PlayerMoveDirection): LevelState` — returns the same state for illegal moves |
-| `rules.ts` | `isSolved(levelState)`, `getNextPosition(level, position, playerMoveDirection)`, `isPositionValid` (built from `isPositionOnMap` + `isPositionWall`), `isPositionBox` |
+| `rules.ts` | `isSolved(levelState)`, `getNextPosition(level, position, playerMoveDirection)`, `isPositionValid` (built from `isPositionOnMap` + `isPositionWall`), `isPositionBox`, `updateBoxPosition` |
 
 ### State shape
 
