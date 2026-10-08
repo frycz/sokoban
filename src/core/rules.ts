@@ -62,21 +62,21 @@ const POSITION_STEPS: Record<PlayerMoveDirection, readonly [number, number]> = {
 
 export function getNextPosition(
   level: Level,
-  position: number,
+  currentPosition: number,
   playerMoveDirection: PlayerMoveDirection,
 ): number {
   const [positionStepX, positionStepY] = POSITION_STEPS[playerMoveDirection]
-  const positionX = getPositionX(level, position) + positionStepX
-  const positionY = getPositionY(level, position) + positionStepY
+  const nextPositionX = getPositionX(level, currentPosition) + positionStepX
+  const nextPositionY = getPositionY(level, currentPosition) + positionStepY
   if (
-    positionX < 0 ||
-    positionX >= level.width ||
-    positionY < 0 ||
-    positionY >= level.height
+    nextPositionX < 0 ||
+    nextPositionX >= level.width ||
+    nextPositionY < 0 ||
+    nextPositionY >= level.height
   ) {
     return -1
   }
-  return positionY * level.width + positionX
+  return nextPositionY * level.width + nextPositionX
 }
 
 export function isSolved(levelState: LevelState): boolean {
