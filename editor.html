@@ -34,6 +34,11 @@
         gap: 16px;
         min-height: 0;
       }
+      /* Author-origin `display` beats the browser's `[hidden]` rule whatever
+         the specificity, so the inactive mode needs hiding explicitly. */
+      section.mode[hidden] {
+        display: none;
+      }
       main,
       aside {
         display: flex;
