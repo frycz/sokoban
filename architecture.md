@@ -15,20 +15,32 @@ TypeScript, built with Vite. `npm run dev` to play, `npm run typecheck` to check
 
 | File | Exports |
 | --- | --- |
-| `types.ts` | `Dir`, `Action`, `Level`, `State` |
+| `types.ts` | `Dir`, `Level`, `State` |
 | `level.ts` | `parse(xsb: string)` → `Level` plus the initial `State` |
-| `step.ts` | `step(state: State, action: Action): State` — returns the same state for illegal moves |
+| `step.ts` | `step(state: State, dir: Dir): State` — returns the same state for illegal moves |
 | `rules.ts` | `isSolved(state)`, `neighbour(level, i, dir)`, `toXY` / `toIdx` helpers |
 
 ### State shape
 
 ```ts
+type Dir = 'up' | 'down' | 'left' | 'right'
 type Level = { width: number; height: number; walls: boolean[]; goals: ReadonlySet<number> }
 type State = { level: Level; player: number; boxes: ReadonlySet<number> }
-type Action = { type: 'move'; dir: Dir }
 ```
 
-`Action` has only one case. Reset was dropped from it for the same reason undo is not in it: resetting means returning to the first entry of the history stack, which is the host's business and would otherwise force the engine to carry the initial state around.
+### There is no `Action` type
+
+The engine takes a bare `Dir`, not a tagged `{ type: 'move'; dir: Dir }`. A discriminated union with one member costs a wrapper object at every call site and carries no information, and Sokoban's engine genuinely has one action — undo, reset, and level-select are all history or host concerns.
+
+It also means `Dir[]` is the engine's replay format, which lines up with the standard LURD solution notation: replaying is `dirs.reduce(step, initial)`.
+
+If a second engine-level action ever appears, the union comes back and the call sites change. That is a deliberate bet that one never will.
+
+The host does have three commands, so the tag lives there instead:
+
+```ts
+type Command = { type: 'move'; dir: Dir } | { type: 'undo' } | { type: 'reset' }
+```
 
 Static data (`Level`) is separated from dynamic data (`State`). The level never changes, so snapshots for undo only copy the player position and the box set.
 
@@ -85,7 +97,7 @@ Full redraw every time is deliberate: it keeps the renderer a pure function of s
 ## Boundaries that matter
 
 - Rules live only in `core/`. `step` is the single place state changes.
-- Input mapping lives only in `host/`. `core/` never sees a keycode — it takes domain actions.
+- Input mapping lives only in `host/`. `core/` never sees a keycode — it takes a `Dir`.
 - Undo lives only in `host/`, outside engine state.
 - `core/` imports nothing from `host/` or `render/`, so it runs unchanged in Node tests, a terminal front end, or a solver.
 

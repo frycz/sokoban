@@ -1,11 +1,12 @@
 import { parse } from '../core/level'
 import { isSolved } from '../core/rules'
 import { step } from '../core/step'
-import type { Action, State } from '../core/types'
+import type { Dir, State } from '../core/types'
 import { createRenderer } from '../render/canvas'
 import { LEVEL } from './level-data'
 
-type Command = Action | { type: 'undo' } | { type: 'reset' }
+/** The host has three commands, so the tag belongs here rather than in core. */
+type Command = { type: 'move'; dir: Dir } | { type: 'undo' } | { type: 'reset' }
 
 const BINDINGS: Record<string, Command> = {
   ArrowUp: { type: 'move', dir: 'up' },
@@ -41,7 +42,7 @@ const current = () => history[history.length - 1]
 function run(command: Command): void {
   switch (command.type) {
     case 'move': {
-      const next = step(current(), command)
+      const next = step(current(), command.dir)
       if (next === current()) return // illegal move, nothing to record
       history.push(next)
       break

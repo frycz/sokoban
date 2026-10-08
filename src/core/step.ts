@@ -1,19 +1,15 @@
 import { neighbour } from './rules'
-import type { Action, Dir, State } from './types'
+import type { Dir, State } from './types'
 
 /**
  * The whole game. Pure: same inputs, same output, no side effects.
  * An illegal move returns the *same* state object, so the host can detect
  * "nothing happened" with ===.
+ *
+ * Because the signature is (State, Dir) => State, replaying a solution is
+ * just dirs.reduce(step, initial).
  */
-export function step(state: State, action: Action): State {
-  switch (action.type) {
-    case 'move':
-      return move(state, action.dir)
-  }
-}
-
-function move(state: State, dir: Dir): State {
+export function step(state: State, dir: Dir): State {
   const { level, player, boxes } = state
 
   const dest = neighbour(level, player, dir)

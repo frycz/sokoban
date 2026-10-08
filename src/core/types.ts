@@ -1,10 +1,9 @@
-export type Dir = 'up' | 'down' | 'left' | 'right'
-
 /**
- * Domain-level actions the engine understands. Deliberately not keycodes:
- * input mapping belongs to the host.
+ * The engine's entire input vocabulary. Deliberately not keycodes: input
+ * mapping belongs to the host. Undo and reset are history operations, so
+ * they live in the host too.
  */
-export type Action = { type: 'move'; dir: Dir }
+export type Dir = 'up' | 'down' | 'left' | 'right'
 
 /** Static level data. Never changes once parsed. */
 export type Level = {
