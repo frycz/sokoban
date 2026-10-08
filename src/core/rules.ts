@@ -1,5 +1,13 @@
 import type { Level, LevelState, PlayerMoveDirection } from './types'
 
+export function getPositionX(level: Level, position: number): number {
+  return position % level.width
+}
+
+export function getPositionY(level: Level, position: number): number {
+  return Math.floor(position / level.width)
+}
+
 function isPositionOnMap(level: Level, position: number): boolean {
   return position >= 0 && position < level.width * level.height
 }
@@ -45,7 +53,7 @@ export function isPositionFree(
   )
 }
 
-const DELTAS: Record<PlayerMoveDirection, readonly [number, number]> = {
+const POSITION_STEPS: Record<PlayerMoveDirection, readonly [number, number]> = {
   up: [0, -1],
   down: [0, 1],
   left: [-1, 0],
@@ -57,11 +65,18 @@ export function getNextPosition(
   position: number,
   playerMoveDirection: PlayerMoveDirection,
 ): number {
-  const [deltaX, deltaY] = DELTAS[playerMoveDirection]
-  const x = (position % level.width) + deltaX
-  const y = Math.floor(position / level.width) + deltaY
-  if (x < 0 || x >= level.width || y < 0 || y >= level.height) return -1
-  return y * level.width + x
+  const [positionStepX, positionStepY] = POSITION_STEPS[playerMoveDirection]
+  const positionX = getPositionX(level, position) + positionStepX
+  const positionY = getPositionY(level, position) + positionStepY
+  if (
+    positionX < 0 ||
+    positionX >= level.width ||
+    positionY < 0 ||
+    positionY >= level.height
+  ) {
+    return -1
+  }
+  return positionY * level.width + positionX
 }
 
 export function isSolved(levelState: LevelState): boolean {

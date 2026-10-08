@@ -1,3 +1,4 @@
+import { getPositionX, getPositionY } from '../core/rules'
 import type { Level, LevelState } from '../core/types'
 
 const COLORS = {
@@ -34,8 +35,8 @@ export function createRenderer(
     const originX = Math.floor((cssWidth - tile * level.width) / 2)
     const originY = Math.floor((cssHeight - tile * level.height) / 2)
     const topLeftOf = (position: number) => ({
-      x: originX + (position % level.width) * tile,
-      y: originY + Math.floor(position / level.width) * tile,
+      x: originX + getPositionX(level, position) * tile,
+      y: originY + getPositionY(level, position) * tile,
     })
 
     for (let position = 0; position < level.wallMap.length; position++) {
@@ -87,8 +88,8 @@ export function createRenderer(
 }
 
 function touchesFloor(level: Level, position: number): boolean {
-  const x = position % level.width
-  const y = Math.floor(position / level.width)
+  const x = getPositionX(level, position)
+  const y = getPositionY(level, position)
   for (let offsetY = -1; offsetY <= 1; offsetY++) {
     for (let offsetX = -1; offsetX <= 1; offsetX++) {
       const neighbourX = x + offsetX
