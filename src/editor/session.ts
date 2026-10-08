@@ -1,6 +1,9 @@
 import {
+  clearCustomTile,
+  clearCustomTiles,
   paintDocument,
   resizeDocument,
+  setCustomTile,
   type Brush,
   type EditorDocument,
 } from './document'
@@ -15,6 +18,14 @@ export type Session = {
   beginStroke: () => void
   /** Returns whether the document changed. */
   paint: (position: number, brush: Brush) => boolean
+  /**
+   * Skin mode's two placement tools. They coalesce per stroke like `paint`,
+   * because placing custom tiles is the same dragging gesture.
+   */
+  placeCustomTile: (position: number, tileIndex: number) => boolean
+  eraseCustomTile: (position: number) => boolean
+  /** Every placement at once — what a new or re-sliced sheet invalidates. */
+  eraseAllCustomTiles: () => boolean
   resize: (width: number, height: number) => boolean
   /** Replaces the document wholesale — a new level, or loaded XSB. */
   replace: (editorDocument: EditorDocument) => void
@@ -37,21 +48,46 @@ export function createSession(initial: EditorDocument): Session {
     strokeOwnsTopEntry = false
   }
 
-  function paint(position: number, brush: Brush): boolean {
-    const painted = paintDocument(current(), position, brush)
-
-    // `paintDocument` returns the same object when the cell already looked like
-    // that, so identity means the stroke did nothing here.
-    if (painted === current()) {
+  /**
+   * Folds an edit into the stroke's single undo entry. Every pure edit returns
+   * the same object when the cell already looked like that, so identity means
+   * the stroke did nothing here and there is nothing to record.
+   */
+  function stroke(edited: EditorDocument): boolean {
+    if (edited === current()) {
       return false
     }
 
     if (strokeOwnsTopEntry) {
-      documents[documents.length - 1] = painted
+      documents[documents.length - 1] = edited
     } else {
-      documents.push(painted)
+      documents.push(edited)
       strokeOwnsTopEntry = true
     }
+
+    return true
+  }
+
+  function paint(position: number, brush: Brush): boolean {
+    return stroke(paintDocument(current(), position, brush))
+  }
+
+  function placeCustomTile(position: number, tileIndex: number): boolean {
+    return stroke(setCustomTile(current(), position, tileIndex))
+  }
+
+  function eraseCustomTile(position: number): boolean {
+    return stroke(clearCustomTile(current(), position))
+  }
+
+  function eraseAllCustomTiles(): boolean {
+    const cleared = clearCustomTiles(current())
+
+    if (cleared === current()) {
+      return false
+    }
+
+    commit(cleared)
 
     return true
   }
@@ -86,6 +122,9 @@ export function createSession(initial: EditorDocument): Session {
       strokeOwnsTopEntry = false
     },
     paint,
+    placeCustomTile,
+    eraseCustomTile,
+    eraseAllCustomTiles,
     resize,
     replace: commit,
     undo,

@@ -1,5 +1,5 @@
 import { ROLE_ORDER, type TileRole } from '../render/tile-roles'
-import type { EditorDocument } from './document'
+import type { CustomTiles, EditorDocument } from './document'
 import { clampSheetSettings, type SheetSettings } from '../render/sheet'
 import {
   UNBOUND,
@@ -7,7 +7,7 @@ import {
   createEmptySkinDraft,
   type SkinDraft,
 } from './skin/skin'
-import { formatDocumentAsXsb, parseXsbToDocument } from './xsb'
+import { formatDocumentAsPublishedXsb, parseXsbToDocument } from './xsb'
 
 /**
  * Bumped when a stored shape changes meaning. A record without the current
@@ -25,15 +25,20 @@ export type StoredSkin = {
 /**
  * The level is stored as XSB, the format the editor already reads and writes, so
  * there is no second level codec to keep in step — with one substitution: floor
- * is written as `-` rather than a space. `parseXsbToDocument` trims blank lines
- * off the top and bottom, so a document whose first row is all floor would come
- * back a row shorter. `-` is the XSB alphabet's own explicit floor, so no row is
- * ever blank and the round trip is exact.
+ * is written as `-` rather than a space, which is what
+ * `formatDocumentAsPublishedXsb` is. `parseXsbToDocument` trims blank lines off
+ * the top and bottom, so a document whose first row is all floor would come back
+ * a row shorter. `-` is the XSB alphabet's own explicit floor, so no row is ever
+ * blank and the round trip is exact.
+ *
+ * The custom tiles ride alongside rather than inside, because XSB has nowhere to
+ * put them: a flat position for the cell, a sheet tile index for the art.
  */
 export function encodeStoredLevel(editorDocument: EditorDocument): string {
   return JSON.stringify({
     version: STORED_VERSION,
-    xsb: formatDocumentAsXsb(editorDocument).replaceAll(' ', '-'),
+    xsb: formatDocumentAsPublishedXsb(editorDocument),
+    customTiles: Object.fromEntries(editorDocument.customTiles),
   })
 }
 
@@ -44,11 +49,48 @@ export function decodeStoredLevel(text: string | null): EditorDocument | null {
     return null
   }
 
+  let editorDocument: EditorDocument
+
   try {
-    return parseXsbToDocument(record.xsb)
+    editorDocument = parseXsbToDocument(record.xsb)
   } catch {
     return null
   }
+
+  return {
+    ...editorDocument,
+    customTiles: readCustomTiles(
+      record.customTiles,
+      editorDocument.width * editorDocument.height,
+    ),
+  }
+}
+
+/**
+ * A record written before custom tiles existed simply has none, which is why the
+ * stored version did not have to move: the field's absence already means the
+ * right thing. Anything out of the level's bounds or not a tile index is
+ * dropped, the same way a nonsense binding comes back unbound.
+ */
+function readCustomTiles(value: unknown, cellCount: number): CustomTiles {
+  const stored = readObject(value)
+  const customTiles = new Map<number, number>()
+
+  for (const [key, tileIndex] of Object.entries(stored)) {
+    const position = Number(key)
+
+    if (!Number.isInteger(position) || position < 0 || position >= cellCount) {
+      continue
+    }
+
+    const index = readTileIndex(tileIndex)
+
+    if (index !== UNBOUND) {
+      customTiles.set(position, index)
+    }
+  }
+
+  return customTiles
 }
 
 export function encodeStoredSkin(

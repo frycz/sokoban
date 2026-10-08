@@ -10,6 +10,19 @@ export type Cell = {
 }
 
 /**
+ * Position → tile index in the sheet skin mode has loaded, for the cells whose
+ * art the author has placed by hand instead of letting the skin decide.
+ *
+ * It is level data that names skin data. The placement belongs to the level the
+ * way a wall does — it survives a resize and rides on the undo stack — but the
+ * index only means something against the sheet it was picked from, which is why
+ * loading or re-slicing a sheet clears it exactly as it clears the bindings.
+ */
+export type CustomTiles = ReadonlyMap<number, number>
+
+export const NO_CUSTOM_TILES: CustomTiles = new Map()
+
+/**
  * A level being drawn. Unlike `LevelState` this is deliberately allowed to be
  * invalid — no player, more boxes than goals, nothing sealed — because that is
  * what every level looks like halfway through. `validate.ts` judges a document;
@@ -19,6 +32,7 @@ export type EditorDocument = {
   readonly width: number
   readonly height: number
   readonly cells: readonly Cell[]
+  readonly customTiles: CustomTiles
 }
 
 /**
@@ -37,6 +51,9 @@ export const FLOOR_CELL: Cell = {
 
 export const MIN_DOCUMENT_SIZE = 3
 export const MAX_DOCUMENT_SIZE = 64
+
+export const DEFAULT_DOCUMENT_WIDTH = 16
+export const DEFAULT_DOCUMENT_HEIGHT = 12
 
 /**
  * Only the size controls clamp. Loading does not, so a level wider than the
@@ -66,7 +83,13 @@ export function createEmptyDocument(
     width: clampedWidth,
     height: clampedHeight,
     cells: new Array<Cell>(clampedWidth * clampedHeight).fill(WALL_CELL),
+    customTiles: NO_CUSTOM_TILES,
   }
+}
+
+/** A blank level at the size the editor opens on. */
+export function createEmptyLevelDocument(): EditorDocument {
+  return createEmptyDocument(DEFAULT_DOCUMENT_WIDTH, DEFAULT_DOCUMENT_HEIGHT)
 }
 
 export function getCellX(
@@ -143,6 +166,62 @@ export function paintDocument(
   return { ...editorDocument, cells }
 }
 
+/**
+ * A tile placed by hand on one cell, over whatever the skin would have drawn
+ * there. Returns the same document when that cell already holds that tile, so a
+ * drag across a row of already-placed cells records nothing — the identity
+ * contract `paintDocument` has.
+ *
+ * A negative index is ignored rather than stored: it is what "no tile is
+ * selected" looks like in skin mode, and `UNBOUND` is not a placement.
+ */
+export function setCustomTile(
+  editorDocument: EditorDocument,
+  position: number,
+  tileIndex: number,
+): EditorDocument {
+  if (position < 0 || position >= editorDocument.cells.length) {
+    return editorDocument
+  }
+
+  if (!Number.isInteger(tileIndex) || tileIndex < 0) {
+    return editorDocument
+  }
+
+  if (editorDocument.customTiles.get(position) === tileIndex) {
+    return editorDocument
+  }
+
+  const customTiles = new Map(editorDocument.customTiles)
+  customTiles.set(position, tileIndex)
+
+  return { ...editorDocument, customTiles }
+}
+
+export function clearCustomTile(
+  editorDocument: EditorDocument,
+  position: number,
+): EditorDocument {
+  if (!editorDocument.customTiles.has(position)) {
+    return editorDocument
+  }
+
+  const customTiles = new Map(editorDocument.customTiles)
+  customTiles.delete(position)
+
+  return { ...editorDocument, customTiles }
+}
+
+export function clearCustomTiles(
+  editorDocument: EditorDocument,
+): EditorDocument {
+  if (editorDocument.customTiles.size === 0) {
+    return editorDocument
+  }
+
+  return { ...editorDocument, customTiles: NO_CUSTOM_TILES }
+}
+
 /** Keeps the top-left corner and pads any new rows or columns with wall. */
 export function resizeDocument(
   editorDocument: EditorDocument,
@@ -172,7 +251,22 @@ export function resizeDocument(
     }
   }
 
-  return { width: clampedWidth, height: clampedHeight, cells }
+  // A position is an index into one grid, so every placement has to be rewritten
+  // against the new width or it would land on a different cell. Anchored at the
+  // top-left like the cells, and dropped rather than clamped when it falls
+  // outside what the resize kept.
+  const customTiles = new Map<number, number>()
+
+  for (const [position, tileIndex] of editorDocument.customTiles) {
+    const x = getCellX(editorDocument, position)
+    const y = getCellY(editorDocument, position)
+
+    if (x < keptWidth && y < keptHeight) {
+      customTiles.set(getPositionFromCoordinates(x, y, clampedWidth), tileIndex)
+    }
+  }
+
+  return { width: clampedWidth, height: clampedHeight, cells, customTiles }
 }
 
 export function countCells(

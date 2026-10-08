@@ -2,17 +2,20 @@ import { requireElement } from './dom'
 import type { Session } from './session'
 import { readStoredText, writeStoredText } from './storage'
 import { validateDocument } from './validate'
-import { formatDocumentAsXsb } from './xsb'
+import { formatDocumentAsPublishedXsb } from './xsb'
 
 /**
- * The tiles half of a bundle: the manifest text and the packed atlas as a data
- * url. Opaque to this module — skin mode builds it, this one posts it — which
- * is what keeps publishing from being a second place that knows how a skin is
+ * The tiles half of a bundle: the manifest text, the packed atlas as a data url,
+ * and `tiles.json` for the cells the author placed a tile on. All three are
+ * opaque to this module — skin mode builds them, this one posts them — which is
+ * what keeps publishing from being a second place that knows how a skin is
  * packed.
  */
 export type SkinExport = {
   readonly manifest: string
   readonly atlasDataUrl: string
+  /** Null when no cell was given a tile of its own. */
+  readonly customTiles: string | null
 }
 
 const ENDPOINT = '/api/levels'
@@ -76,7 +79,7 @@ export function createPublishPanel(
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         name,
-        xsb: formatDocumentAsXsb(session.current()),
+        xsb: formatDocumentAsPublishedXsb(session.current()),
         skin,
       }),
     }

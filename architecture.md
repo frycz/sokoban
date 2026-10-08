@@ -14,10 +14,11 @@ src/render/     canvas.ts, colors.ts, tile-roles.ts,    (state) => draw
                 sheet.ts, skin.ts
 src/editor/     document.ts, xsb.ts, validate.ts,       level mode, same pure/shell/draw split
                 session.ts, layout.ts, canvas.ts,       plus autosave:
-                level-mode.ts, dom.ts, index.ts,        stored-state.ts, storage.ts
-                publish.ts                              and the export to levels/
+                level-mode.ts, dom.ts, index.ts,        stored-state.ts, autosave.ts,
+                publish.ts                              storage.ts — and the export to levels/
 src/editor/skin/ skin.ts, roles.ts, atlas.ts,           skin mode
-                 palette.ts, palette-layout.ts, preview.ts
+                 custom-tiles.ts, palette.ts,
+                 palette-layout.ts, preview.ts
 tools/          level-export-plugin.ts                  the dev-server endpoint publish.ts posts to
 ```
 
@@ -134,9 +135,9 @@ arrow keys belong to a board, and until a level is picked there is no board for
 them to move anything on. Escape and the Levels button put it back to null.
 
 The renderer is built per level rather than once for the canvas, because the
-skin belongs to the level: `createRenderer(canvas, level.skin)` draws that
-bundle's tiles, and `createRenderer(canvas, null)` draws the procedural palette
-for a level that shipped without any.
+skin belongs to the level: `createRenderer(canvas, level.skin, level.customTiles)`
+draws that bundle's tiles, and `createRenderer(canvas, null)` draws the
+procedural palette for a level that shipped without any.
 
 A card's miniature is that same renderer pointed at a small canvas, so a
 miniature is not an approximation of the level — it is the game's own view of it,
@@ -152,17 +153,17 @@ Keys: arrows or WASD to move, Z or U to undo, R to reset, Escape for the level l
 
 ## `render/` — dumb
 
-`createRenderer(canvas, skin)` returns a `render(levelState): void` that redraws the whole board. Reads `level.wallMap` and `level.goalPositions` for the board, and `playerCurrentPosition` and `boxPositions` for the movable pieces. No event listeners, no game logic, no knowledge of history.
+`createRenderer(canvas, skin, customTiles)` returns a `render(levelState): void` that redraws the whole board. Reads `level.wallMap` and `level.goalPositions` for the board, and `playerCurrentPosition` and `boxPositions` for the movable pieces. The custom tiles are the one thing it draws that is not a function of state — they are the level's own art, fixed for its lifetime, which is why they are a constructor argument like the skin. No event listeners, no game logic, no knowledge of history.
 
 Full redraw every time is deliberate: it keeps the renderer a pure function of state with nothing to invalidate, and a Sokoban board is small enough that the cost is irrelevant.
 
-| File            | Role                                                                         |
-| --------------- | ---------------------------------------------------------------------------- |
-| `canvas.ts`     | the two painters — tiles when there is a skin, flat colour when there is not |
-| `colors.ts`     | the palette, a leaf                                                          |
-| `tile-roles.ts` | `ROLE_ORDER`, `TileRole`, and the wall classifier, a leaf                    |
-| `sheet.ts`      | how to cut a grid of tiles out of an image. Pure                             |
-| `skin.ts`       | a manifest parsed, bound to its atlas, and resolved to a rect per role. Pure |
+| File            | Role                                                                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `canvas.ts`     | the two painters — tiles when there is a skin, flat colour when there is not                                                                |
+| `colors.ts`     | the palette, a leaf                                                                                                                         |
+| `tile-roles.ts` | `ROLE_ORDER`, `TileRole`, and the wall classifier, a leaf                                                                                   |
+| `sheet.ts`      | how to cut a grid of tiles out of an image. Pure                                                                                            |
+| `skin.ts`       | a manifest parsed, bound to its atlas, and resolved to a rect per role — or per column, for the custom tiles. Also reads `tiles.json`. Pure |
 
 ### The skin lives in `render/`, not in the editor
 
@@ -202,10 +203,12 @@ levels/quarry-steps/
   level.json   { "name": "Quarry Steps" }
   skin.png     the packed atlas        — optional
   skin.json    the manifest for it     — optional
+  tiles.json   the cells with art of   — optional, and only with a skin
+               their own
 ```
 
-A directory rather than four files with a shared prefix, because the four names
-inside are then fixed: the game's globs are `/levels/*/level.xsb` and friends,
+A directory rather than files with a shared prefix, because the names inside are
+then fixed: the game's globs are `/levels/*/level.xsb` and friends,
 and a level is paired with its tiles by being in the same directory rather than
 by matching file names. Exporting over an existing level replaces the bundle in
 place, which includes deleting `skin.png` and `skin.json` when the new export has
@@ -216,6 +219,70 @@ either.
 line is exactly the kind of character the parser refuses — and a slug is a file
 name rather than something someone chose to read. Anything else a level grows
 later (author, par, a solution) goes in the same file.
+
+### Custom tiles are the level's, not the skin's
+
+`tiles.json` is the cells whose art the author placed by hand — a sheet tile on
+one cell, drawn last, over the skin's answer and over the box or player standing
+there. That is the opposite of what a binding is, and the two live in different
+places for that reason.
+
+```json
+{ "width": 16, "height": 12, "tiles": { "34": 6, "35": 7 } }
+```
+
+It is level data: `EditorDocument` carries a `customTiles` map beside its
+`cells`, so a placement rides on the undo stack, is rewritten by
+`resizeDocument` against the new width, and goes away when the document does.
+`SkinDraft` never sees it. What it holds is skin data, though — a tile index into
+the loaded sheet — which is why loading a sheet or re-slicing one erases every
+placement exactly as it clears every binding: an index only means something
+against one grid.
+
+The game never has the sheet, only the packed atlas, so the export translates.
+`skin/custom-tiles.ts` gives each distinct placed tile one column after the role
+columns and hands the same answer to both halves — `atlas.ts` packs those
+columns, `tiles.json` points at them — so the image and the file cannot disagree
+about which column is which. The manifest's `roles` list is unchanged and still
+names column `n`; the custom columns have no name, which is why
+`getSkinColumnRect` asks by number.
+
+They ship with the skin rather than beside the level because what they name is
+columns in that atlas. A bundle with `tiles.json` and no usable skin has nothing
+for them to index, and `host/levels.ts` says so and plays without them.
+
+#### A position is an index into one grid
+
+`tiles.json` names a cell by its flat position, which means the game's grid has
+to be the editor's exactly. It nearly isn't: `parseStringToLevelState` trims
+blank lines off the top and bottom, so a level whose outer row is all floor —
+playable, and only a warning in the editor — would load a row short and shift
+every position in it.
+
+So the published `level.xsb` spells floor `-`, XSB's own explicit floor, which is
+what `formatDocumentAsPublishedXsb` is for. No row is ever blank, nothing is ever
+trimmed, and the grid is exact. Autosave already made the identical substitution
+for the identical reason; the XSB textarea keeps spaces, because that one is for
+reading.
+
+Belt and braces on top: the file states its own `width` and `height`, and
+`parseCustomTileMap` refuses it when they are not the level's. A hand-edited
+bundle drawing every tile one cell off would be worse than one drawing none.
+
+#### The preview has a hover marker, so it has a second redraw
+
+Placing a tile needs to show which cell is under the pointer, and skin mode's `update()` is too much to run per pointer move: it repaints the sheet palette and rebuilds fourteen role rows, each carrying the sheet's data url in a `background-image`. So a pointer move that only moved repaints the preview canvas alone, and `update()` is kept for the moves that actually changed the document.
+
+For the same reason the skin's autosave compares state rather than text. The record is dominated by the sheet's data url, and rebuilding that string to find out whether anything changed is the one thing a redraw must not do — so `persist` compares the draft by identity and the data url by reference. Every edit replaces the draft wholesale, and the pure edits return the same object when nothing changed, which makes identity an exact test.
+
+#### Both panels edit the level now
+
+Autosave used to hang off level mode, which was the only thing that changed the
+document. Placing a custom tile is a change to the document made from the skin
+panel, so the `level` slice's codec, baseline and failure flag moved to
+`editor/autosave.ts` and `index.ts` hands one of them to both modes. Still one
+owner of the key, which is what keeps the two panels from racing a
+read-modify-write on it.
 
 ### The tiles are optional, the level is not
 
@@ -246,7 +313,7 @@ lands in `levels/etc/`.
 
 ### The game finds levels by glob, not by index
 
-`host/levels.ts` reads the directory with four eager `import.meta.glob` calls, so
+`host/levels.ts` reads the directory with five eager `import.meta.glob` calls, so
 the bundler resolves the list at build time. No index file to keep in step, no
 directory listing to fetch, and the built site gets the same content the dev
 server shows — a small atlas is inlined as a data url, a large one is emitted as
@@ -271,24 +338,27 @@ document.ts ← xsb.ts ← validate.ts        pure
 layout.ts │  stored-state.ts │            pure
       ↑   │       ↑          │
       │  session.ts          │            mutable, no DOM
-      │        │             │
+      │        │   ↑         │
+      │        │ autosave.ts │            the level slice, for both modes
+      │        │   │         │
     canvas.ts  │  storage.ts │            the only localStorage, a leaf
         └──────┴─────┴───────┴→ the DOM: level-mode.ts, skin-mode.ts,
                                 publish.ts, index.ts
 ```
 
-| File              | Role                                                                                                            |
-| ----------------- | --------------------------------------------------------------------------------------------------------------- |
-| `document.ts`     | `EditorDocument`, `Cell`, `Brush`, and the pure edits: `createEmptyDocument`, `paintDocument`, `resizeDocument` |
-| `xsb.ts`          | `parseXsbToDocument` / `formatDocumentAsXsb` — the only text I/O                                                |
-| `validate.ts`     | `validateDocument(document)` → problems, counts, `isPlayable`                                                   |
-| `stored-state.ts` | encode / decode of what autosave keeps, for both modes. Pure                                                    |
-| `session.ts`      | the undo stack, the editor's one mutable value. No DOM                                                          |
-| `layout.ts`       | tile size, origin, and pixel → cell. Pure                                                                       |
-| `canvas.ts`       | `(document, hoverPosition) => draw`. No logic                                                                   |
-| `storage.ts`      | the three `localStorage` keys, every call guarded. Imports nothing                                              |
-| `publish.ts`      | the Export to levels/ panel: gate on `validateDocument`, then post the bundle                                   |
-| `index.ts`        | the mode switch, Clear storage, and the keys and resizes each mode gets                                         |
+| File              | Role                                                                                                                                            |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `document.ts`     | `EditorDocument`, `Cell`, `Brush`, `CustomTiles`, and the pure edits: `createEmptyDocument`, `paintDocument`, `setCustomTile`, `resizeDocument` |
+| `xsb.ts`          | `parseXsbToDocument` / `formatDocumentAsXsb` — the only text I/O                                                                                |
+| `validate.ts`     | `validateDocument(document)` → problems, counts, `isPlayable`                                                                                   |
+| `stored-state.ts` | encode / decode of what autosave keeps, for both modes. Pure                                                                                    |
+| `session.ts`      | the undo stack, the editor's one mutable value. No DOM                                                                                          |
+| `autosave.ts`     | the `level` slice: what the editor opens on, and the write both modes share                                                                     |
+| `layout.ts`       | tile size, origin, and pixel → cell. Pure                                                                                                       |
+| `canvas.ts`       | `(document, hoverPosition) => draw`. No logic                                                                                                   |
+| `storage.ts`      | the three `localStorage` keys, every call guarded. Imports nothing                                                                              |
+| `publish.ts`      | the Export to levels/ panel: gate on `validateDocument`, then post the bundle                                                                   |
+| `index.ts`        | the mode switch, Clear storage, and the keys and resizes each mode gets                                                                         |
 
 `stored-state.ts` also reads `skin/`, which is the one place the level half of the editor and the skin half meet outside a mode module: autosave covers both, so the codec has to know both shapes.
 
@@ -322,13 +392,17 @@ The severities are a real line, not a mood: `error` means `parseStringToLevelSta
 
 The editor writes to `localStorage` on every edit and opens where it was left. Three keys — `sokoban.editor.level`, `sokoban.editor.skin` and `sokoban.editor.publish` — each written only by the one thing that owns that state, so no two of them ever coordinate a read-modify-write of one shared record.
 
-Autosave hangs off each mode's `update()` — the call every edit already ends with — rather than being remembered at each of the dozen places that change something. Each mode holds the text it last stored and compares before writing, which keeps a redraw that changed nothing (a hover, a resize, a mode switch) from writing at all and makes the common case one string compare. No debounce: a level is a few kilobytes of XSB, cheap enough to store per painted cell.
+Autosave hangs off each mode's `update()` — the call every edit already ends with — rather than being remembered at each of the dozen places that change something. Each slice holds the text it last stored and compares before writing, which keeps a redraw that changed nothing (a hover, a resize, a mode switch) from writing at all and makes the common case one string compare. No debounce: a level is a few kilobytes of XSB, cheap enough to store per painted cell.
+
+The `level` slice is the one both modes write, because both now edit the document — see "Both panels edit the level now". It lives in `autosave.ts` for that reason, and each mode calls it rather than keeping its own baseline.
 
 The undo stack does not persist. A reload is a new session, and the document is the work.
 
 #### The level is stored as XSB, with `-` for floor
 
 Storing it in the format the editor already reads and writes means there is no second level codec to keep in step. The substitution is the catch: `parseXsbToDocument` trims blank lines off the top and bottom, so a document whose first row is all floor would come back a row shorter. `-` is the XSB alphabet's own explicit floor, so no row is ever blank and the round trip is exact. `stored-state.test.ts` asserts it on exactly that document.
+
+The custom tiles ride alongside the text rather than inside it, as a position → sheet index object, because XSB has nowhere to put them. A record written before they existed simply has none, which is why the stored version did not have to move: the field's absence already means the right thing.
 
 #### A skin is stored with its sheet
 
@@ -369,20 +443,22 @@ render/tile-roles.ts   ROLE_ORDER, TileRole        pure leaves, no imports
 render/sheet.ts        the tile grid                 — shared with the game
         ↑
      skin.ts ← atlas.ts                            pure (atlas.ts packs on a canvas)
-   ↑    ↑          ↑
-roles.ts │         │   palette-layout.ts           pure
-   ↑     │         │          ↑
-palette.ts  preview.ts        │                    draw
-      └──────┴──────────┴─────┴→ skin-mode.ts      the only DOM
+   ↑  ↑   ↑        ↑
+   │  │ custom-tiles.ts   palette-layout.ts        pure
+   │  │    ↑              ↑
+roles.ts   │             │                         pure
+   ↑       │             │
+palette.ts │ preview.ts  │                         draw
+      └────┴──────┴──────┴→ skin-mode.ts           the only DOM
 ```
 
 ### A skin binds roles, not cells
 
-The game renderer resolves a sprite from state — it never sees a cell's identity — so a skin can say "walls look like this" but not "the wall at (4, 7) looks like this". Clicking the preview therefore binds the role of the cell clicked, via `getTopRoleAtCell`, and every wall changes at once.
-
-Per-cell decoration is a different feature: it is level data, not skin data, and it would need the XSB format to carry a decoration layer. Not deferred so much as separate.
+The game renderer resolves a sprite from state — it never sees a cell's identity — so a skin can say "walls look like this" but not "the wall at (4, 7) looks like this". Clicking the preview with the **bind role** tool therefore binds the role of the cell clicked, via `getTopRoleAtPosition`, and every wall changes at once.
 
 Because a level need not contain every role — there is nothing to click if it has no goals — the role list in the sidebar is a second drop target for the same action. The palette selection is the brush; the preview and the role list are both places to apply it.
+
+The **place tile** and **erase tile** tools are the way out of that: one cell, one tile, over whatever the skin decided. That is per-cell art, which is level data rather than skin data, and it lives on the document — see "Custom tiles are the level's, not the skin's".
 
 ### Fourteen roles: six required, eight optional
 
@@ -480,7 +556,8 @@ Packing also ships only what the skin uses, so a skin cut from a 500-tile sheet 
 - `localStorage` lives only in `editor/storage.ts`, which holds the keys and swallows the browser's failure modes. What goes in them is `editor/stored-state.ts`, which is pure and tested; the game stores nothing.
 - The file system lives only in `tools/level-export-plugin.ts`, which runs in the dev server and never in a browser or a build. It is also the only place a path is built from user input, which is why it derives the slug itself.
 - `tools/` may import `src/core/`, and nothing else may import `tools/`.
-- `editor/index.ts` is a mode switch and nothing else: it owns which panel is visible and routes keys and resizes to it.
+- `editor/index.ts` is a mode switch and nothing else: it owns which panel is visible, routes keys and resizes to it, and builds the two things neither panel owns — the level autosave and the publish panel.
+- A skin binds a role; a custom tile names a cell. The first lives in `SkinDraft`, the second on `EditorDocument`, and no module holds both.
 
 ## Tests
 
@@ -503,9 +580,11 @@ Vitest is pinned to 2.x because 3+ requires Vite 6, and this project is on Vite 
 
 The suite is checked against deliberate regressions, not just written: dropping the bounds check in `getNextPosition`, ignoring what is behind a pushed box, replacing the flood fill with the raw open map, making `isSolved` vacuous, and letting undo run past the start each fail at least one test.
 
-The editor's four pure modules are tested the same way, with XSB as the language in both directions — `parseXsbToDocument` in, `formatDocumentAsXsb` out, so a brush test is two boards. `layout.ts` and `canvas.ts` are untested: one is three lines of arithmetic the pointer handler and the renderer share, the other is drawing.
+The editor's pure modules are tested the same way, with XSB as the language in both directions — `parseXsbToDocument` in, `formatDocumentAsXsb` out, so a brush test is two boards. The custom tiles are the exception, because XSB cannot spell them: those assertions read the map. `layout.ts` and `canvas.ts` are untested: one is three lines of arithmetic the pointer handler and the renderer share, the other is drawing.
 
-`render/skin.test.ts` covers the seam between the editor's output and the game's input: that a manifest resolves to the columns the atlas was packed with, that an unbound wall piece falls back to the wall fill, and that an unrecognised role still consumes its column. The atlas it tests against is two numbers, because its size is all a skin reads off the image.
+`render/skin.test.ts` covers the seam between the editor's output and the game's input: that a manifest resolves to the columns the atlas was packed with, that an unbound wall piece falls back to the wall fill, that an unrecognised role still consumes its column, and that a column past the ones `roles` names still cuts. The atlas it tests against is two numbers, because its size is all a skin reads off the image.
+
+`skin/custom-tiles.test.ts` covers the other half of that seam the only way worth doing it: `formatCustomTilesFile` out, `parseCustomTileMap` — the game's own reader — back in, asserted against the packing. A column that survives the file is the whole promise, and asserting either side against a literal would not make it.
 
 `host/levels.ts` and `editor/publish.ts` are untested, and so is the export endpoint. They are I/O, and the one thing worth asserting about them — that only a level the game can load is ever written — is asserted by `parseStringToLevelState`, which the endpoint calls and `core/level.test.ts` already covers from both directions.
 

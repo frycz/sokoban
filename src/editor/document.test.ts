@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { xsb } from '../core/test-helpers'
 import {
+  clearCustomTile,
+  clearCustomTiles,
   createEmptyDocument,
   MAX_DOCUMENT_SIZE,
   MIN_DOCUMENT_SIZE,
   paintDocument,
   resizeDocument,
+  setCustomTile,
 } from './document'
 import { formatDocumentAsXsb, parseXsbToDocument } from './xsb'
 
@@ -95,5 +98,60 @@ describe('resizeDocument', () => {
     const start = createEmptyDocument(4, 4)
 
     expect(resizeDocument(start, 4, 4)).toBe(start)
+  })
+
+  it('keeps every custom tile on its own cell when the width changes', () => {
+    const start = setCustomTile(
+      setCustomTile(createEmptyDocument(4, 4), positionOf(4, 3, 0), 7),
+      positionOf(4, 1, 2),
+      9,
+    )
+
+    const widened = resizeDocument(start, 6, 4)
+
+    expect(widened.customTiles.get(positionOf(6, 3, 0))).toBe(7)
+    expect(widened.customTiles.get(positionOf(6, 1, 2))).toBe(9)
+    expect(widened.customTiles.size).toBe(2)
+  })
+
+  it('drops a custom tile the resize cropped away', () => {
+    const start = setCustomTile(
+      createEmptyDocument(6, 6),
+      positionOf(6, 5, 5),
+      7,
+    )
+
+    expect(resizeDocument(start, 4, 4).customTiles.size).toBe(0)
+  })
+})
+
+describe('custom tiles', () => {
+  const start = createEmptyDocument(3, 3)
+  const middle = positionOf(3, 1, 1)
+
+  it('places a tile on one cell and takes it off again', () => {
+    const placed = setCustomTile(start, middle, 7)
+
+    expect(placed.customTiles.get(middle)).toBe(7)
+    expect(clearCustomTile(placed, middle).customTiles.size).toBe(0)
+  })
+
+  it('leaves the cells alone, so a placement is art and not level structure', () => {
+    expect(setCustomTile(start, middle, 7).cells).toBe(start.cells)
+  })
+
+  it('returns the same document when nothing would change', () => {
+    const placed = setCustomTile(start, middle, 7)
+
+    expect(setCustomTile(placed, middle, 7)).toBe(placed)
+    expect(clearCustomTile(start, middle)).toBe(start)
+    expect(clearCustomTiles(start)).toBe(start)
+  })
+
+  it('refuses a position off the grid and an index that is not one', () => {
+    expect(setCustomTile(start, -1, 7)).toBe(start)
+    expect(setCustomTile(start, 9, 7)).toBe(start)
+    expect(setCustomTile(start, middle, -1)).toBe(start)
+    expect(setCustomTile(start, middle, 1.5)).toBe(start)
   })
 })

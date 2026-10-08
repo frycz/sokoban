@@ -1,6 +1,12 @@
 import { parseStringToLevelState } from '../core/level'
-import type { LevelState } from '../core/types'
-import { createSkin, parseSkinManifest, type Skin } from '../render/skin'
+import type { Level, LevelState } from '../core/types'
+import {
+  createSkin,
+  parseCustomTileMap,
+  parseSkinManifest,
+  type CustomTileMap,
+  type Skin,
+} from '../render/skin'
 import { LEVEL } from './level-data'
 
 /** A level the picker can offer: parsed, so it is known to be playable. */
@@ -9,6 +15,8 @@ export type PlayableLevel = {
   readonly levelState: LevelState
   /** Null for a level that shipped without tiles; it plays in flat colour. */
   readonly skin: Skin | null
+  /** The cells the author gave a tile of their own. Null when there are none. */
+  readonly customTiles: CustomTileMap | null
 }
 
 export type LevelCatalog = {
@@ -18,10 +26,10 @@ export type LevelCatalog = {
 }
 
 /**
- * The editor writes one directory per level into `levels/`, and these four
- * globs are how the game finds them — resolved by the bundler against the
- * project root, so the same code serves the dev server and the built site, with
- * no index file to keep in step and no directory listing to fetch.
+ * The editor writes one directory per level into `levels/`, and these globs are
+ * how the game finds them — resolved by the bundler against the project root, so
+ * the same code serves the dev server and the built site, with no index file to
+ * keep in step and no directory listing to fetch.
  *
  * Eager, because the whole point is to show every level at once.
  */
@@ -47,6 +55,11 @@ const atlasUrls = import.meta.glob<string>('/levels/*/skin.png', {
   eager: true,
 })
 
+const customTileRecords = import.meta.glob<unknown>('/levels/*/tiles.json', {
+  import: 'default',
+  eager: true,
+})
+
 /**
  * Everything in `levels/`, plus the built-in level so the picker is never empty
  * — a fresh checkout has nothing exported yet, and the game should still be
@@ -64,7 +77,7 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
   const builtIn = readLevel('Built-in', LEVEL)
 
   if (builtIn.kind === 'level') {
-    levels.push({ ...builtIn.level, skin: null })
+    levels.push({ ...builtIn.level, skin: null, customTiles: null })
   } else {
     problems.push(builtIn.message)
   }
@@ -90,17 +103,73 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
       problems.push(skin.message)
     }
 
+    const customTiles = loadCustomTiles(
+      slug,
+      read.level.levelState.level,
+      skin.kind === 'skin',
+    )
+
+    if (customTiles.kind === 'problem') {
+      problems.push(customTiles.message)
+    }
+
     levels.push({
       ...read.level,
       skin: skin.kind === 'skin' ? skin.skin : null,
+      customTiles:
+        customTiles.kind === 'customTiles' ? customTiles.customTiles : null,
     })
   }
 
   return { levels, problems }
 }
 
+type CustomTileResult =
+  | { readonly kind: 'customTiles'; readonly customTiles: CustomTileMap }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'problem'; readonly message: string }
+
+/**
+ * `tiles.json` names atlas columns, so it is meaningless without the skin — and
+ * it names cells by flat position, so it is meaningless unless its grid is the
+ * level's. Both are checked here rather than assumed, because a hand-edited
+ * bundle drawing every tile one cell off would be worse than one drawing none.
+ */
+function loadCustomTiles(
+  slug: string,
+  level: Level,
+  hasSkin: boolean,
+): CustomTileResult {
+  const record = customTileRecords[`/levels/${slug}/tiles.json`]
+
+  if (record === undefined) {
+    return { kind: 'none' }
+  }
+
+  if (!hasSkin) {
+    return {
+      kind: 'problem',
+      message: `${slug}: has tiles.json but no usable skin to cut them from, so its custom tiles are ignored.`,
+    }
+  }
+
+  const customTiles = parseCustomTileMap(record, level.width, level.height)
+
+  if (!customTiles) {
+    return {
+      kind: 'problem',
+      message: `${slug}: tiles.json does not describe this level's ${level.width}×${level.height} grid, so its custom tiles are ignored.`,
+    }
+  }
+
+  return { kind: 'customTiles', customTiles }
+}
+
 type LevelResult =
-  | { readonly kind: 'level'; readonly level: Omit<PlayableLevel, 'skin'> }
+  | {
+      readonly kind: 'level'
+      readonly level: Omit<PlayableLevel, 'skin' | 'customTiles'>
+    }
   | { readonly kind: 'problem'; readonly message: string }
 
 function readLevel(name: string, xsb: string): LevelResult {

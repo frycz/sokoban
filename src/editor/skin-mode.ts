@@ -1,3 +1,4 @@
+import type { LevelAutosave } from './autosave'
 import {
   requireElement,
   downloadBlob,
@@ -11,6 +12,11 @@ import type { Session } from './session'
 import { readStoredText, writeStoredText } from './storage'
 import { decodeStoredSkin, encodeStoredSkin } from './stored-state'
 import { getAtlasSize, packSkinAtlas } from './skin/atlas'
+import {
+  formatCustomTilesFile,
+  packCustomTiles,
+  type CustomTilePacking,
+} from './skin/custom-tiles'
 import { createPalettePainter } from './skin/palette'
 import { createSkinPreviewPainter } from './skin/preview'
 import { ROLE_LABELS, getTopRoleAtPosition, type TileRole } from './skin/roles'
@@ -69,6 +75,19 @@ const ROLE_GROUPS: readonly {
 ]
 
 /**
+ * What a click on the preview means. Binding a role is the skin's own gesture —
+ * every wall changes at once — and the other two are the escape hatch from it:
+ * one cell, one tile, whatever the skin would have drawn there.
+ */
+type PreviewTool = 'bind' | 'place' | 'erase'
+
+const TOOL_OF_KEY: Record<string, PreviewTool | undefined> = {
+  '1': 'bind',
+  '2': 'place',
+  '3': 'erase',
+}
+
+/**
  * Skin mode plus the one thing outside it that needs the skin: publishing a
  * level bundle, which is both halves of the editor at once. The draft and the
  * loaded sheet stay in this closure — `getSkinExport` hands out the packed
@@ -78,7 +97,15 @@ export type SkinMode = EditorMode & {
   readonly getSkinExport: () => SkinExport | null
 }
 
-export function createSkinMode(session: Session): SkinMode {
+/**
+ * The custom tiles live on the document rather than in the draft, so skin mode
+ * takes the level autosave too: placing a tile is an edit to the level, and the
+ * `level` slice has to be written whichever panel made it.
+ */
+export function createSkinMode(
+  session: Session,
+  levelAutosave: LevelAutosave,
+): SkinMode {
   const fileInput = requireElement<HTMLInputElement>('#sheet-file')
   const tileWidthInput = requireElement<HTMLInputElement>('#tile-width')
   const tileHeightInput = requireElement<HTMLInputElement>('#tile-height')
@@ -92,6 +119,11 @@ export function createSkinMode(session: Session): SkinMode {
   const zoomInButton = requireElement<HTMLButtonElement>('#zoom-in')
   const zoomLevel = requireElement<HTMLElement>('#zoom-level')
   const previewCanvas = requireElement<HTMLCanvasElement>('#skin-preview')
+  const previewTools = requireElement<HTMLElement>('#preview-tools')
+  const showSkinTilesInput =
+    requireElement<HTMLInputElement>('#show-skin-tiles')
+  const showCustomTilesInput =
+    requireElement<HTMLInputElement>('#show-custom-tiles')
   const report = requireElement<HTMLElement>('#skin-report')
   const roleList = requireElement<HTMLElement>('#role-list')
   const atlasButton = requireElement<HTMLButtonElement>('#export-atlas')
@@ -106,11 +138,23 @@ export function createSkinMode(session: Session): SkinMode {
   let sheetImage: ImageBitmap | null = null
   let sheetDataUrl: string | null = stored?.sheetDataUrl ?? null
   let selectedTileIndex = UNBOUND
-  // A view setting, not part of the skin, so it is not stored with the draft.
+  // View settings, not part of the skin, so none of them is stored with the
+  // draft — the same deal the level panel's selected brush gets.
   let paletteZoom = 1
-  // As in level mode: the draft came out of storage, so the two start in step
-  // and nothing is written back until the draft actually differs.
-  let savedSkin = encodeStoredSkin(draft, sheetDataUrl)
+  let previewTool: PreviewTool = 'bind'
+  let showSkinTiles = true
+  let showCustomTiles = true
+  let hoverPosition = -1
+  let isPlacing = false
+  // What storage already holds, as the two values it is made of rather than as
+  // the text. The draft came out of storage, so the two start in step and
+  // nothing is written back until the skin actually differs — and the test for
+  // that is identity, not a string compare, because the sheet's data url
+  // dominates the record and a redraw must not rebuild it. Every edit replaces
+  // `draft` wholesale and the pure edits return the same object when nothing
+  // changed, so identity is exact.
+  let savedDraft: SkinDraft = draft
+  let savedSheetDataUrl: string | null = sheetDataUrl
   let storageNote: string | null = null
 
   syncSheetInputs()
@@ -252,27 +296,59 @@ export function createSkinMode(session: Session): SkinMode {
    * nothing without the exact image it was cut from.
    */
   function persist(): void {
-    const text = encodeStoredSkin(draft, sheetDataUrl)
-
-    if (text === savedSkin) {
+    if (draft === savedDraft && sheetDataUrl === savedSheetDataUrl) {
       return
     }
 
-    savedSkin = text
+    savedDraft = draft
+    savedSheetDataUrl = sheetDataUrl
 
-    if (writeStoredText('skin', text)) {
+    if (writeStoredText('skin', encodeStoredSkin(draft, sheetDataUrl))) {
       storageNote = null
 
       return
     }
 
     // The sheet is what makes the record big, and bindings mean nothing without
-    // it, so fall back to storing the settings alone rather than nothing.
-    const withoutSheet = encodeStoredSkin(clearBindings(draft), null)
-    savedSkin = withoutSheet
-    storageNote = writeStoredText('skin', withoutSheet)
+    // it, so fall back to storing the settings alone rather than nothing. The
+    // baseline moves either way, so a sheet too large to store is not retried
+    // on every redraw — only when the skin changes again.
+    storageNote = writeStoredText(
+      'skin',
+      encodeStoredSkin(clearBindings(draft), null),
+    )
       ? 'Sheet too large for storage — settings are saved, bindings are not.'
       : 'Not being saved — browser storage is unavailable.'
+  }
+
+  /**
+   * The hand-placed tiles, said in the sidebar rather than only drawn, because
+   * the two visibility switches mean the preview can be showing none of them.
+   */
+  function renderCustomTileReport(): void {
+    const placed = session.current().customTiles.size
+
+    if (previewTool === 'place' && selectedTileIndex === UNBOUND) {
+      setMessage('Pick a tile from the sheet to place.', 'error')
+    }
+
+    if (placed === 0) {
+      return
+    }
+
+    setMessage(
+      `${placed} custom ${placed === 1 ? 'tile' : 'tiles'} placed${showCustomTiles ? '' : ' — hidden'}.`,
+      showCustomTiles ? 'ok' : 'warning',
+    )
+  }
+
+  function renderToolControls(): void {
+    for (const button of previewTools.querySelectorAll('button[data-tool]')) {
+      button.setAttribute(
+        'aria-pressed',
+        String(button.getAttribute('data-tool') === previewTool),
+      )
+    }
   }
 
   function renderZoomControls(): void {
@@ -283,8 +359,19 @@ export function createSkinMode(session: Session): SkinMode {
       sheetImage === null || paletteZoom === ZOOM_STEPS[ZOOM_STEPS.length - 1]
   }
 
+  function paintPreviewOnly(): void {
+    paintPreview(session.current(), draft, sheetImage, {
+      showSkinTiles,
+      showCustomTiles,
+      hoverPosition,
+    })
+  }
+
   function update(): void {
     persist()
+    // Placing a custom tile is an edit to the level, so this panel has to save
+    // the level slice too — it is no longer only level mode that changes it.
+    levelAutosave.persist()
     paintPalette(
       sheetImage,
       draft.sheet,
@@ -292,12 +379,21 @@ export function createSkinMode(session: Session): SkinMode {
       selectedTileIndex,
       paletteZoom,
     )
+    renderToolControls()
     renderZoomControls()
-    paintPreview(session.current(), draft, sheetImage)
+    paintPreviewOnly()
     renderReport()
+    renderCustomTileReport()
 
     if (storageNote !== null) {
       setMessage(storageNote, 'warning')
+    }
+
+    if (levelAutosave.hasFailed()) {
+      setMessage(
+        'Custom tiles are not being saved — browser storage is unavailable.',
+        'warning',
+      )
     }
 
     renderRoleList()
@@ -354,8 +450,11 @@ export function createSkinMode(session: Session): SkinMode {
       sheetImage = loaded
       sheetDataUrl = dataUrl
       // Tile indices only mean something against one grid, so a new sheet
-      // starts from no bindings rather than art that silently moved.
+      // starts from no bindings rather than art that silently moved. The
+      // hand-placed tiles are indices into that same grid, so they go the same
+      // way — undoably, since they are part of the level.
       draft = clearBindings(draft)
+      session.eraseAllCustomTiles()
       selectedTileIndex = UNBOUND
       update()
     } catch {
@@ -382,18 +481,51 @@ export function createSkinMode(session: Session): SkinMode {
     update()
   }
 
-  /** Called after storage has been cleared; see level mode's `reset`. */
+  /**
+   * Called after storage has been cleared; see level mode's `reset`. The custom
+   * tiles are not cleared here: they belong to the level, and level mode's reset
+   * replaces the whole document, which takes them with it.
+   */
   function reset(): void {
     draft = createEmptySkinDraft()
     sheetImage = null
     sheetDataUrl = null
     selectedTileIndex = UNBOUND
     paletteZoom = 1
-    savedSkin = encodeStoredSkin(draft, sheetDataUrl)
+    previewTool = 'bind'
+    showSkinTiles = true
+    showCustomTiles = true
+    showSkinTilesInput.checked = true
+    showCustomTilesInput.checked = true
+    hoverPosition = -1
+    savedDraft = draft
+    savedSheetDataUrl = sheetDataUrl
     storageNote = null
     // So that picking the same sheet again still fires a change event.
     fileInput.value = ''
     syncSheetInputs()
+  }
+
+  /**
+   * Z for undo, as in level mode, because it is the same stack: placing custom
+   * tiles is a level edit, and this panel is now a place they get made.
+   */
+  function handleKey(event: KeyboardEvent): boolean {
+    const tool = TOOL_OF_KEY[event.key]
+
+    if (tool) {
+      selectTool(tool)
+
+      return true
+    }
+
+    if (event.key.toLowerCase() === 'z' && session.undo()) {
+      update()
+
+      return true
+    }
+
+    return false
   }
 
   function readSheetSettings(): void {
@@ -413,6 +545,7 @@ export function createSkinMode(session: Session): SkinMode {
     draft = hasResliced ? clearBindings(next) : next
 
     if (hasResliced) {
+      session.eraseAllCustomTiles()
       selectedTileIndex = UNBOUND
     }
 
@@ -508,7 +641,7 @@ export function createSkinMode(session: Session): SkinMode {
     { passive: false },
   )
 
-  previewCanvas.addEventListener('pointerdown', (event) => {
+  function getPositionFromPointer(event: PointerEvent): number {
     const editorDocument = session.current()
     const bounds = previewCanvas.getBoundingClientRect()
     const layout = computeGridLayout(
@@ -516,18 +649,106 @@ export function createSkinMode(session: Session): SkinMode {
       previewCanvas.clientWidth,
       previewCanvas.clientHeight,
     )
-    const position = getPositionAtPixel(
+
+    return getPositionAtPixel(
       editorDocument,
       layout,
       event.clientX - bounds.left,
       event.clientY - bounds.top,
     )
+  }
+
+  /** Returns whether the document changed, so a drag only redraws when it did. */
+  function applyPlacementTool(position: number): boolean {
+    if (previewTool === 'erase') {
+      return session.eraseCustomTile(position)
+    }
+
+    return session.placeCustomTile(position, selectedTileIndex)
+  }
+
+  function selectTool(tool: PreviewTool): void {
+    previewTool = tool
+    update()
+  }
+
+  previewCanvas.addEventListener('pointerdown', (event) => {
+    const position = getPositionFromPointer(event)
 
     if (position < 0) {
       return
     }
 
-    assign(getTopRoleAtPosition(editorDocument, position))
+    hoverPosition = position
+
+    // Binding is one click on one cell — it changes every cell of that role —
+    // so there is nothing to drag. The placement tools are a stroke, exactly
+    // like painting the level.
+    if (previewTool === 'bind') {
+      assign(getTopRoleAtPosition(session.current(), position))
+
+      return
+    }
+
+    event.preventDefault()
+    isPlacing = true
+    previewCanvas.setPointerCapture(event.pointerId)
+    session.beginStroke()
+    applyPlacementTool(position)
+    update()
+  })
+
+  /**
+   * The hover marker is view state on one canvas, so moving the pointer repaints
+   * that canvas and nothing else. The full `update` rebuilds the role list and
+   * repaints the sheet, both of which carry the sheet's data url around — far
+   * too much to do per pointer move, which is what level mode gets away with
+   * only because it has one canvas and a kilobyte of state.
+   */
+  previewCanvas.addEventListener('pointermove', (event) => {
+    const position = getPositionFromPointer(event)
+    const hasMoved = position !== hoverPosition
+    hoverPosition = position
+
+    if (isPlacing && applyPlacementTool(position)) {
+      update()
+
+      return
+    }
+
+    if (hasMoved) {
+      paintPreviewOnly()
+    }
+  })
+
+  previewCanvas.addEventListener('pointerup', () => {
+    isPlacing = false
+  })
+
+  previewCanvas.addEventListener('pointerleave', () => {
+    isPlacing = false
+    hoverPosition = -1
+    paintPreviewOnly()
+  })
+
+  previewTools.addEventListener('click', (event) => {
+    const tool = (event.target as Element)
+      .closest('button[data-tool]')
+      ?.getAttribute('data-tool')
+
+    if (tool) {
+      selectTool(tool as PreviewTool)
+    }
+  })
+
+  showSkinTilesInput.addEventListener('change', () => {
+    showSkinTiles = showSkinTilesInput.checked
+    update()
+  })
+
+  showCustomTilesInput.addEventListener('change', () => {
+    showCustomTiles = showCustomTilesInput.checked
+    update()
   })
 
   roleList.addEventListener('click', (event) => {
@@ -550,12 +771,29 @@ export function createSkinMode(session: Session): SkinMode {
     }
   })
 
+  /**
+   * Which atlas column each hand-placed cell takes. Worked out from the sheet
+   * the indices were picked against, so the atlas packer and `tiles.json` are
+   * handed the same answer rather than each deriving one.
+   */
+  function getCustomTilePacking(image: ImageBitmap): CustomTilePacking {
+    return packCustomTiles(
+      draft,
+      session.current().customTiles,
+      getSheetGrid(draft.sheet, image.width, image.height).tileCount,
+    )
+  }
+
   atlasButton.addEventListener('click', () => {
     if (!sheetImage) {
       return
     }
 
-    const canvas = packSkinAtlas(draft, sheetImage)
+    const canvas = packSkinAtlas(
+      draft,
+      sheetImage,
+      getCustomTilePacking(sheetImage).sheetTileIndices,
+    )
     canvas.toBlob((blob) => {
       if (blob) {
         downloadBlob(blob, `${toSkinFileName(draft.name)}.png`)
@@ -564,7 +802,10 @@ export function createSkinMode(session: Session): SkinMode {
   })
 
   manifestButton.addEventListener('click', () => {
-    const size = getAtlasSize(draft)
+    const customColumns = sheetImage
+      ? getCustomTilePacking(sheetImage).sheetTileIndices.length
+      : 0
+    const size = getAtlasSize(draft, customColumns)
     downloadBlob(
       new Blob([formatSkinManifest(draft)], { type: 'application/json' }),
       `${toSkinFileName(draft.name)}.json`,
@@ -578,17 +819,36 @@ export function createSkinMode(session: Session): SkinMode {
    * sheet loaded, or a required role still unbound. Exactly the condition that
    * disables the two download buttons, so what gets published is what the
    * sidebar says is exportable.
+   *
+   * The custom tiles ride with it rather than with the level, because what they
+   * name is columns in this atlas: without the skin there is nothing for them to
+   * index, so they cannot be shipped separately from it.
    */
   function getSkinExport(): SkinExport | null {
     if (!sheetImage || !isSkinComplete(draft)) {
       return null
     }
 
+    const editorDocument = session.current()
+    const packing = getCustomTilePacking(sheetImage)
+
     return {
       manifest: formatSkinManifest(draft),
-      atlasDataUrl: packSkinAtlas(draft, sheetImage).toDataURL('image/png'),
+      atlasDataUrl: packSkinAtlas(
+        draft,
+        sheetImage,
+        packing.sheetTileIndices,
+      ).toDataURL('image/png'),
+      customTiles:
+        packing.columnOfPosition.size === 0
+          ? null
+          : formatCustomTilesFile(
+              editorDocument.width,
+              editorDocument.height,
+              packing,
+            ),
     }
   }
 
-  return { update, reset, getSkinExport }
+  return { update, reset, handleKey, getSkinExport }
 }

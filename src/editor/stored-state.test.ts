@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { xsb } from '../core/test-helpers'
+import { setCustomTile } from './document'
 import { bindRole, createEmptySkinDraft, UNBOUND } from './skin/skin'
 import {
   decodeStoredLevel,
@@ -56,6 +57,24 @@ describe('stored level', () => {
       decodeStoredLevel(JSON.stringify({ version: 2, xsb: '###' })),
     ).toBeNull()
     expect(decodeStoredLevel(JSON.stringify({ version: 1 }))).toBeNull()
+  })
+
+  it('keeps the custom tiles, which XSB has nowhere to put', () => {
+    const placed = setCustomTile(parseXsbToDocument(LEVEL), 8, 20)
+    const restored = decodeStoredLevel(encodeStoredLevel(placed))
+
+    expect(restored && [...restored.customTiles]).toEqual([[8, 20]])
+  })
+
+  it('drops a custom tile that is not on the level it came back with', () => {
+    const stored = JSON.parse(
+      encodeStoredLevel(parseXsbToDocument(LEVEL)),
+    ) as Record<string, unknown>
+    stored.customTiles = { 0: 4, 999: 4, '-1': 4, nonsense: 4, 1: -2 }
+
+    const restored = decodeStoredLevel(JSON.stringify(stored))
+
+    expect(restored && [...restored.customTiles]).toEqual([[0, 4]])
   })
 
   it('ignores a record whose level no longer parses', () => {

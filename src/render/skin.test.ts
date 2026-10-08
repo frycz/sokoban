@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { createSkin, getSkinTileRect, parseSkinManifest } from './skin'
+import {
+  createSkin,
+  getSkinColumnRect,
+  getSkinTileRect,
+  parseSkinManifest,
+} from './skin'
 
 /**
  * The only thing a skin reads off the atlas is its size, so a stand-in with
@@ -100,5 +105,26 @@ describe('getSkinTileRect', () => {
     expect(
       getSkinTileRect(createSkin(manifest!, atlas(54, 18)), 'player')?.x,
     ).toBe(1 + 2 * 18)
+  })
+})
+
+/**
+ * The custom tiles sit in the columns past the ones `roles` names, so the atlas
+ * is wider than the manifest describes and nothing but the number finds them.
+ */
+describe('getSkinColumnRect', () => {
+  it('cuts a column the role list does not name', () => {
+    const manifest = parseSkinManifest(sixTileManifest)
+
+    expect(manifest).not.toBeNull()
+    // Two custom tiles appended to the six roles, so the atlas holds eight.
+    const skin = createSkin(manifest!, atlas(144, 18))
+
+    expect(getSkinColumnRect(skin, 6)?.x).toBe(1 + 6 * 18)
+    expect(getSkinColumnRect(skin, 7)?.x).toBe(1 + 7 * 18)
+  })
+
+  it('returns null for a column the atlas does not hold', () => {
+    expect(getSkinColumnRect(createSixTileSkin(), 6)).toBeNull()
   })
 })

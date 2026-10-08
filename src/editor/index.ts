@@ -1,5 +1,6 @@
+import { createInitialLevelDocument, createLevelAutosave } from './autosave'
 import { requireElement, type EditorMode } from './dom'
-import { createInitialLevelDocument, createLevelMode } from './level-mode'
+import { createLevelMode } from './level-mode'
 import { createPublishPanel } from './publish'
 import { createSession } from './session'
 import { createSkinMode } from './skin-mode'
@@ -9,15 +10,21 @@ type ModeName = 'level' | 'skin'
 
 // The editor opens on whatever was last autosaved. The level is read here
 // because the session is built from it; the skin reads its own slice. Each mode
-// then writes only its own, which is why there are two keys — see `storage.ts`.
+// then writes only its own, which is why there are three keys — see
+// `storage.ts`.
 const session = createSession(createInitialLevelDocument())
+
+// Both panels edit the level now — level mode paints cells, skin mode places
+// custom tiles on them — so the `level` slice's autosave is built once here and
+// handed to both rather than owned by either.
+const levelAutosave = createLevelAutosave(session)
 
 // One session, two modes: the skin preview renders the level being drawn, so
 // the two panels share the document rather than each holding their own.
-const skinMode = createSkinMode(session)
+const skinMode = createSkinMode(session, levelAutosave)
 
 const modes: Record<ModeName, EditorMode> = {
-  level: createLevelMode(session),
+  level: createLevelMode(session, levelAutosave),
   skin: skinMode,
 }
 

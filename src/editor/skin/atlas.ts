@@ -13,15 +13,22 @@ export type AtlasSize = {
 }
 
 /**
- * One row, one tile per bound role, in `ROLE_ORDER`. Unbound roles take no
- * column — the manifest's role list says what is actually there — so a six-tile
- * skin exports six tiles and a fully pieced one exports fourteen.
+ * One row, one tile per bound role, in `ROLE_ORDER`, then one per distinct
+ * hand-placed tile. Unbound roles take no column — the manifest's role list says
+ * what is actually there — so a six-tile skin exports six tiles and a fully
+ * pieced one exports fourteen. The custom columns sit after the roles and have
+ * no name in the manifest; `tiles.json` is what points at them.
  */
-export function getAtlasSize(draft: SkinDraft): AtlasSize {
+export function getAtlasSize(
+  draft: SkinDraft,
+  customColumnCount = 0,
+): AtlasSize {
   const { tileWidth, tileHeight } = clampSheetSettings(draft.sheet)
 
   return {
-    width: getBoundRoles(draft).length * (tileWidth + EXPORT_SPACING),
+    width:
+      (getBoundRoles(draft).length + customColumnCount) *
+      (tileWidth + EXPORT_SPACING),
     height: tileHeight + EXPORT_SPACING,
   }
 }
@@ -36,10 +43,15 @@ export function getAtlasSlotX(draft: SkinDraft, columnIndex: number): number {
  * Repacks only the tiles the skin actually uses, so a skin cut from a 500-tile
  * sheet ships as a handful. Refuses a draft missing a required role rather than
  * emitting an atlas with holes in it.
+ *
+ * `customSheetTileIndices` are the hand-placed tiles, already deduplicated and
+ * bounds-checked by `packCustomTiles` — the one place that decides which column
+ * each of them lands in, so the atlas and `tiles.json` cannot disagree.
  */
 export function packSkinAtlas(
   draft: SkinDraft,
   image: ImageBitmap,
+  customSheetTileIndices: readonly number[] = [],
 ): HTMLCanvasElement {
   const missing = getMissingRequiredRoles(draft)
 
@@ -48,7 +60,7 @@ export function packSkinAtlas(
   }
 
   const { tileWidth, tileHeight } = clampSheetSettings(draft.sheet)
-  const size = getAtlasSize(draft)
+  const size = getAtlasSize(draft, customSheetTileIndices.length)
   const canvas = document.createElement('canvas')
   canvas.width = size.width
   canvas.height = size.height
@@ -63,12 +75,23 @@ export function packSkinAtlas(
 
   const grid = getSheetGrid(draft.sheet, image.width, image.height)
 
-  for (const [columnIndex, role] of getBoundRoles(draft).entries()) {
-    const source = getSourceTileRect(draft.sheet, grid, draft.bindings[role])
+  const columns = [
+    ...getBoundRoles(draft).map((role) => ({
+      sheetTileIndex: draft.bindings[role],
+      describe: () => `the tile bound to ${role}`,
+    })),
+    ...customSheetTileIndices.map((sheetTileIndex) => ({
+      sheetTileIndex,
+      describe: () => `the hand-placed tile #${sheetTileIndex}`,
+    })),
+  ]
+
+  for (const [columnIndex, column] of columns.entries()) {
+    const source = getSourceTileRect(draft.sheet, grid, column.sheetTileIndex)
 
     if (source.width === 0) {
       throw new Error(
-        `Cannot export: the tile bound to ${role} is outside the sheet`,
+        `Cannot export: ${column.describe()} is outside the sheet`,
       )
     }
 

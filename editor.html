@@ -70,6 +70,16 @@
         touch-action: pan-x pan-y;
         cursor: crosshair;
       }
+      /* The two visibility switches read as one group, set apart from the
+         tools: they change what the preview shows, not what a click does. */
+      #preview-tools .shows {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-left: auto;
+        color: #7d8699;
+        font-size: 12px;
+      }
       #zoom-level {
         min-width: 3em;
         text-align: center;
@@ -318,6 +328,39 @@
     <section class="mode" id="skin-mode" hidden>
       <main>
         <h2>Preview — the level from level mode</h2>
+        <div class="row" id="preview-tools">
+          <button
+            type="button"
+            data-tool="bind"
+            title="Click a cell to give its role the selected tile"
+          >
+            1 bind role
+          </button>
+          <button
+            type="button"
+            data-tool="place"
+            title="Click or drag to put the selected tile on single cells"
+          >
+            2 place tile
+          </button>
+          <button
+            type="button"
+            data-tool="erase"
+            title="Click or drag to take placed tiles off again"
+          >
+            3 erase tile
+          </button>
+          <span class="shows">
+            <label for="show-skin-tiles">
+              <input id="show-skin-tiles" type="checkbox" checked />
+              skin tiles
+            </label>
+            <label for="show-custom-tiles">
+              <input id="show-custom-tiles" type="checkbox" checked />
+              custom tiles
+            </label>
+          </span>
+        </div>
         <canvas class="board" id="skin-preview"></canvas>
       </main>
       <aside>

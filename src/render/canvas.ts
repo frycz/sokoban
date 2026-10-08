@@ -5,7 +5,13 @@ import {
 } from '../core/rules'
 import type { Level, LevelState } from '../core/types'
 import { COLORS } from './colors'
-import { getRoleColor, getSkinTileRect, type Skin } from './skin'
+import {
+  getRoleColor,
+  getSkinColumnRect,
+  getSkinTileRect,
+  type CustomTileMap,
+  type Skin,
+} from './skin'
 import { getWallRole, type TileRole } from './tile-roles'
 
 type BoardLayout = {
@@ -22,10 +28,15 @@ type BoardLayout = {
  *
  * With a skin it draws the level's own tiles, and without one the procedural
  * palette — which is also what a level exported with no tiles plays as.
+ *
+ * `customTiles` are the cells the level's author gave a tile of their own. They
+ * are columns in the atlas, so they need the skin: a bundle with tiles.json and
+ * no skin.png has nothing for them to index, and the board draws without them.
  */
 export function createRenderer(
   canvas: HTMLCanvasElement,
   skin: Skin | null = null,
+  customTiles: CustomTileMap | null = null,
 ): (levelState: LevelState) => void {
   const context = canvas.getContext('2d')
 
@@ -38,7 +49,7 @@ export function createRenderer(
 
     if (skin) {
       context.imageSmoothingEnabled = !skin.isPixelated
-      drawSkinnedBoard(context, levelState, layout, skin)
+      drawSkinnedBoard(context, levelState, layout, skin, customTiles)
 
       return
     }
@@ -91,14 +102,16 @@ function getTopLeft(
 /**
  * Layer order, which is also what the skin format asks of the art: floor under
  * every cell of the board, walls included, then wall or goal over it, then the
- * object over both. Floor being a layer rather than a tile the others replace is
- * what lets every other tile use transparency.
+ * object over both, and last anything the author placed by hand. Floor being a
+ * layer rather than a tile the others replace is what lets every other tile use
+ * transparency.
  */
 function drawSkinnedBoard(
   context: CanvasRenderingContext2D,
   levelState: LevelState,
   layout: BoardLayout,
   skin: Skin,
+  customTiles: CustomTileMap | null,
 ): void {
   const { level, playerCurrentPosition, boxPositions } = levelState
 
@@ -156,6 +169,38 @@ function drawSkinnedBoard(
 
   const player = getTopLeft(level, layout, playerCurrentPosition)
   drawRole('player', player.x, player.y)
+
+  if (!customTiles) {
+    return
+  }
+
+  // Last, over everything, and over the cells the silhouette culled too: the
+  // author said what this cell looks like, which outranks both the skin's answer
+  // and the board's own outline.
+  for (const [position, column] of customTiles) {
+    if (position >= level.wallMap.length) {
+      continue
+    }
+
+    const rect = getSkinColumnRect(skin, column)
+
+    if (!rect) {
+      continue
+    }
+
+    const { x, y } = getTopLeft(level, layout, position)
+    context.drawImage(
+      skin.image,
+      rect.x,
+      rect.y,
+      rect.width,
+      rect.height,
+      x,
+      y,
+      layout.tile,
+      layout.tile,
+    )
+  }
 }
 
 /** The same board in flat colour, for a level that shipped without tiles. */

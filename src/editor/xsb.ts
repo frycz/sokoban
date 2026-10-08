@@ -1,5 +1,6 @@
 import {
   FLOOR_CELL,
+  NO_CUSTOM_TILES,
   WALL_CELL,
   getCellX,
   getCellY,
@@ -72,7 +73,9 @@ export function parseXsbToDocument(text: string): EditorDocument {
     }
   }
 
-  return { width, height, cells }
+  // XSB has nowhere to put a per-cell tile, so loaded text is always a level
+  // with none; the placements live beside the cells rather than in the format.
+  return { width, height, cells, customTiles: NO_CUSTOM_TILES }
 }
 
 export function formatDocumentAsXsb(editorDocument: EditorDocument): string {
@@ -91,6 +94,23 @@ export function formatDocumentAsXsb(editorDocument: EditorDocument): string {
   }
 
   return lines.join('\n')
+}
+
+/**
+ * The level as the game will read it: floor spelled `-`, XSB's own explicit
+ * floor, rather than as a space.
+ *
+ * `parseStringToLevelState` trims blank lines off the top and bottom, so a level
+ * whose outer row is all floor would load a row short and every position in it
+ * would shift. Nothing is ever a blank line when floor is `-`, which is what
+ * lets `tiles.json` name a cell by its flat position and be sure the game means
+ * the same cell. Autosave makes the identical substitution for the identical
+ * reason; the XSB textarea keeps spaces, because that is for reading.
+ */
+export function formatDocumentAsPublishedXsb(
+  editorDocument: EditorDocument,
+): string {
+  return formatDocumentAsXsb(editorDocument).replaceAll(' ', '-')
 }
 
 export function describePosition(

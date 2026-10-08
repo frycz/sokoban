@@ -21,11 +21,13 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024
 const ATLAS_PREFIX = 'data:image/png;base64,'
 
 /** Written by the endpoint, so a bundle it replaces never keeps stale tiles. */
-const SKIN_FILES = ['skin.json', 'skin.png'] as const
+const SKIN_FILES = ['skin.json', 'skin.png', 'tiles.json'] as const
 
 type SkinPayload = {
   readonly manifest: string
   readonly atlasDataUrl: string
+  /** `tiles.json`, or null when no cell was given a tile of its own. */
+  readonly customTiles: string | null
 }
 
 export function levelExportPlugin(): Plugin {
@@ -96,6 +98,18 @@ async function handle(
         'base64',
       ),
     )
+
+    // Only the levels that have one, so a bundle is never left with a tiles.json
+    // whose columns the new atlas no longer has.
+    if (payload.skin.customTiles) {
+      await writeFile(
+        join(directory, 'tiles.json'),
+        payload.skin.customTiles,
+        'utf8',
+      )
+    } else {
+      await rm(join(directory, 'tiles.json'), { force: true })
+    }
   } else {
     // Re-exporting without tiles has to leave the bundle consistent rather than
     // pairing the new level with whatever art happened to be there before.
@@ -179,7 +193,24 @@ function parseSkin(value: unknown): SkinPayload | null | string {
     return 'The skin manifest was not JSON.'
   }
 
-  return { manifest: record.manifest, atlasDataUrl: record.atlasDataUrl }
+  if (record.customTiles !== null && record.customTiles !== undefined) {
+    if (typeof record.customTiles !== 'string') {
+      return 'The custom tiles were not a file.'
+    }
+
+    try {
+      JSON.parse(record.customTiles)
+    } catch {
+      return 'The custom tiles were not JSON.'
+    }
+  }
+
+  return {
+    manifest: record.manifest,
+    atlasDataUrl: record.atlasDataUrl,
+    customTiles:
+      typeof record.customTiles === 'string' ? record.customTiles : null,
+  }
 }
 
 /**
