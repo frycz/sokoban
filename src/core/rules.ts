@@ -1,6 +1,6 @@
-import type { Direction, Level, State } from './types'
+import type { Level, PlayerMoveDirection, State } from './types'
 
-const DELTAS: Record<Direction, readonly [number, number]> = {
+const DELTAS: Record<PlayerMoveDirection, readonly [number, number]> = {
   up: [0, -1],
   down: [0, 1],
   left: [-1, 0],
@@ -16,12 +16,16 @@ export function toIndex(level: Level, x: number, y: number): number {
 }
 
 /**
- * Flat index of the cell one step in `direction`, or -1 if that leaves the
- * grid. Going through x/y rather than adding +/-1 is what stops a `left` move
- * at x === 0 from wrapping to the end of the previous row.
+ * Flat index of the cell one step in `playerMoveDirection`, or -1 if that
+ * leaves the grid. Going through x/y rather than adding +/-1 is what stops a
+ * `left` move at x === 0 from wrapping to the end of the previous row.
  */
-export function neighbour(level: Level, position: number, direction: Direction): number {
-  const [deltaX, deltaY] = DELTAS[direction]
+export function neighbour(
+  level: Level,
+  position: number,
+  playerMoveDirection: PlayerMoveDirection
+): number {
+  const [deltaX, deltaY] = DELTAS[playerMoveDirection]
   const x = (position % level.width) + deltaX
   const y = Math.floor(position / level.width) + deltaY
   if (x < 0 || x >= level.width || y < 0 || y >= level.height) return -1
