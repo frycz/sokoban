@@ -18,7 +18,7 @@ TypeScript, built with Vite. `npm run dev` to play, `npm run typecheck` to check
 | `types.ts` | `PlayerMoveDirection`, `Level`, `State` |
 | `level.ts` | `parse(xsb: string)` → `Level` plus the initial `State` |
 | `step.ts` | `step(state: State, playerMoveDirection: PlayerMoveDirection): State` — returns the same state for illegal moves |
-| `rules.ts` | `isSolved(state)`, `neighbour(level, position, playerMoveDirection)`, `toCoordinates` / `toIndex` helpers |
+| `rules.ts` | `isSolved(state)`, `neighbour(level, position, playerMoveDirection)` |
 
 ### State shape
 
@@ -106,7 +106,7 @@ Full redraw every time is deliberate: it keeps the renderer a pure function of s
 
 ## Naming
 
-Identifiers are spelled out: `playerMoveDirection` not `dir`, `destination` not `dest`, `context` not `ctx`, `character` not `char`, `position` not `i`, `toCoordinates` / `toIndex` not `toXY` / `toIdx`.
+Identifiers are spelled out: `playerMoveDirection` not `dir`, `destination` not `dest`, `context` not `ctx`, `character` not `char`, `position` not `i`.
 
 The only short names left are `x` and `y` for grid coordinates, where the single letters are the convention rather than a contraction.
 

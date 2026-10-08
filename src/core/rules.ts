@@ -7,14 +7,6 @@ const DELTAS: Record<PlayerMoveDirection, readonly [number, number]> = {
   right: [1, 0],
 }
 
-export function toCoordinates(level: Level, position: number): { x: number; y: number } {
-  return { x: position % level.width, y: Math.floor(position / level.width) }
-}
-
-export function toIndex(level: Level, x: number, y: number): number {
-  return y * level.width + x
-}
-
 /**
  * Flat index of the cell one step in `playerMoveDirection`, or -1 if that
  * leaves the grid. Going through x/y rather than adding +/-1 is what stops a
