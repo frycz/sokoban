@@ -1,12 +1,5 @@
 import type { Level, LevelState, PlayerMoveDirection } from './types'
 
-const DELTAS: Record<PlayerMoveDirection, readonly [number, number]> = {
-  up: [0, -1],
-  down: [0, 1],
-  left: [-1, 0],
-  right: [1, 0],
-}
-
 function isPositionOnMap(level: Level, position: number): boolean {
   return position >= 0 && position < level.width * level.height
 }
@@ -44,6 +37,13 @@ export function isPositionFree(levelState: LevelState, position: number): boolea
     !isPositionBox(levelState, position) &&
     !isPositionPlayer(levelState, position)
   )
+}
+
+const DELTAS: Record<PlayerMoveDirection, readonly [number, number]> = {
+  up: [0, -1],
+  down: [0, 1],
+  left: [-1, 0],
+  right: [1, 0],
 }
 
 export function getNextPosition(
