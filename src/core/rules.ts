@@ -8,7 +8,15 @@ export function getPositionY(level: Level, position: number): number {
   return Math.floor(position / level.width)
 }
 
-function isPositionOnMap(level: Level, position: number): boolean {
+export function getPositionFromCoordinates(
+  positionX: number,
+  positionY: number,
+  levelWidth: number,
+): number {
+  return positionY * levelWidth + positionX
+}
+
+function isPositionOnLevel(level: Level, position: number): boolean {
   return position >= 0 && position < level.width * level.height
 }
 
@@ -35,7 +43,7 @@ export function isPositionBox(
 }
 
 function isPositionValid(level: Level, position: number): boolean {
-  return isPositionOnMap(level, position) && !isPositionWall(level, position)
+  return isPositionOnLevel(level, position) && !isPositionWall(level, position)
 }
 
 function isPositionPlayer(levelState: LevelState, position: number): boolean {
@@ -76,7 +84,7 @@ export function getNextPosition(
   ) {
     return -1
   }
-  return nextPositionY * level.width + nextPositionX
+  return getPositionFromCoordinates(nextPositionX, nextPositionY, level.width)
 }
 
 export function isSolved(levelState: LevelState): boolean {

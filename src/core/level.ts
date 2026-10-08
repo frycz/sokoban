@@ -1,3 +1,4 @@
+import { getPositionFromCoordinates } from './rules'
 import type { Level, LevelState } from './types'
 
 export type ParsedLevel = { level: Level; initial: LevelState }
@@ -19,7 +20,7 @@ export function parse(text: string): ParsedLevel {
     const line = lines[y]
     for (let x = 0; x < width; x++) {
       const character = x < line.length ? line[x] : ' '
-      const index = y * width + x
+      const index = getPositionFromCoordinates(x, y, width)
       switch (character) {
         case '#':
           break

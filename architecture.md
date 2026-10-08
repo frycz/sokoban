@@ -13,12 +13,12 @@ TypeScript, built with Vite. `npm run dev` to play, `npm run typecheck` to check
 
 ## `core/` — pure, no DOM, no I/O
 
-| File       | Exports                                                                                                                                                                                                                          |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `types.ts` | `PlayerMoveDirection`, `Level`, `LevelState`                                                                                                                                                                                     |
-| `level.ts` | `parse(xsb: string)` → `Level` plus the initial `LevelState`                                                                                                                                                                     |
-| `step.ts`  | `step(levelState: LevelState, playerMoveDirection: PlayerMoveDirection): LevelState` — returns the same state for illegal moves                                                                                                  |
-| `rules.ts` | `isSolved(levelState)`, `getNextPosition(level, position, playerMoveDirection)`, `isPositionValid` (built from `isPositionOnMap` + `isPositionWall`), `isPositionBox`, `isPositionPlayer`, `isPositionFree`, `updateBoxPosition` |
+| File       | Exports                                                                                                                                                                                                                            |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `types.ts` | `PlayerMoveDirection`, `Level`, `LevelState`                                                                                                                                                                                       |
+| `level.ts` | `parse(xsb: string)` → `Level` plus the initial `LevelState`                                                                                                                                                                       |
+| `step.ts`  | `step(levelState: LevelState, playerMoveDirection: PlayerMoveDirection): LevelState` — returns the same state for illegal moves                                                                                                    |
+| `rules.ts` | `isSolved(levelState)`, `getNextPosition(level, position, playerMoveDirection)`, `isPositionValid` (built from `isPositionOnLevel` + `isPositionWall`), `isPositionBox`, `isPositionPlayer`, `isPositionFree`, `updateBoxPosition` |
 
 ### State shape
 

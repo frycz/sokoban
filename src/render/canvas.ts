@@ -1,4 +1,8 @@
-import { getPositionX, getPositionY } from '../core/rules'
+import {
+  getPositionFromCoordinates,
+  getPositionX,
+  getPositionY,
+} from '../core/rules'
 import type { Level, LevelState } from '../core/types'
 
 const COLORS = {
@@ -96,7 +100,12 @@ function touchesFloor(level: Level, position: number): boolean {
       const neighbourY = y + offsetY
       if (neighbourX < 0 || neighbourX >= level.width) continue
       if (neighbourY < 0 || neighbourY >= level.height) continue
-      if (!level.wallMap[neighbourY * level.width + neighbourX]) return true
+      const neighbourPosition = getPositionFromCoordinates(
+        neighbourX,
+        neighbourY,
+        level.width,
+      )
+      if (!level.wallMap[neighbourPosition]) return true
     }
   }
   return false
