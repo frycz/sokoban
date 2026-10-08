@@ -19,7 +19,10 @@ export function createRenderer(
   canvas: HTMLCanvasElement,
 ): (levelState: LevelState) => void {
   const context = canvas.getContext('2d')
-  if (!context) throw new Error('Canvas 2D context is unavailable')
+
+  if (!context) {
+    throw new Error('Canvas 2D context is unavailable')
+  }
 
   return function render(levelState: LevelState): void {
     const { level, playerCurrentPosition, boxPositions } = levelState
@@ -47,7 +50,10 @@ export function createRenderer(
       const { x, y } = topLeftOf(position)
 
       if (level.wallMap[position]) {
-        if (!touchesFloor(level, position)) continue
+        if (!touchesFloor(level, position)) {
+          continue
+        }
+
         context.fillStyle = COLORS.wall
         context.fillRect(x, y, tile, tile)
         context.fillStyle = COLORS.wallEdge
@@ -94,20 +100,31 @@ export function createRenderer(
 function touchesFloor(level: Level, position: number): boolean {
   const x = getPositionX(level, position)
   const y = getPositionY(level, position)
+
   for (let offsetY = -1; offsetY <= 1; offsetY++) {
     for (let offsetX = -1; offsetX <= 1; offsetX++) {
       const neighbourX = x + offsetX
       const neighbourY = y + offsetY
-      if (neighbourX < 0 || neighbourX >= level.width) continue
-      if (neighbourY < 0 || neighbourY >= level.height) continue
+
+      if (neighbourX < 0 || neighbourX >= level.width) {
+        continue
+      }
+      if (neighbourY < 0 || neighbourY >= level.height) {
+        continue
+      }
+
       const neighbourPosition = getPositionFromCoordinates(
         neighbourX,
         neighbourY,
         level.width,
       )
-      if (!level.wallMap[neighbourPosition]) return true
+
+      if (!level.wallMap[neighbourPosition]) {
+        return true
+      }
     }
   }
+
   return false
 }
 

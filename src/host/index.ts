@@ -26,7 +26,11 @@ const BINDINGS: Record<string, Command> = {
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector)
-  if (!element) throw new Error(`Expected ${selector} in the document`)
+
+  if (!element) {
+    throw new Error(`Expected ${selector} in the document`)
+  }
+
   return element
 }
 
@@ -43,21 +47,32 @@ function run(command: Command): void {
   switch (command.type) {
     case 'move': {
       const next = step(current(), command.playerMoveDirection)
-      if (next === current()) return
+
+      if (next === current()) {
+        return
+      }
+
       history.push(next)
       break
     }
     case 'undo': {
-      if (history.length === 1) return
+      if (history.length === 1) {
+        return
+      }
+
       history.pop()
       break
     }
     case 'reset': {
-      if (history.length === 1) return
+      if (history.length === 1) {
+        return
+      }
+
       history.length = 1
       break
     }
   }
+
   update()
 }
 
@@ -71,9 +86,16 @@ function update(): void {
 }
 
 window.addEventListener('keydown', (event) => {
-  if (event.metaKey || event.ctrlKey || event.altKey) return
+  if (event.metaKey || event.ctrlKey || event.altKey) {
+    return
+  }
+
   const command = BINDINGS[event.key] ?? BINDINGS[event.key.toLowerCase()]
-  if (!command) return
+
+  if (!command) {
+    return
+  }
+
   event.preventDefault()
   run(command)
 })

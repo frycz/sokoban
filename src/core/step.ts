@@ -31,7 +31,10 @@ export function step(
     playerNextPosition,
     playerMoveDirection,
   )
-  if (!isPositionFree(levelState, behindTheBoxPosition)) return levelState
+
+  if (!isPositionFree(levelState, behindTheBoxPosition)) {
+    return levelState
+  }
 
   return {
     level,

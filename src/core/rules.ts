@@ -45,6 +45,7 @@ export function updateBoxPosition(
   const updatedBoxPositions = new Set(boxPositions)
   updatedBoxPositions.delete(currentBoxPosition)
   updatedBoxPositions.add(nextBoxPosition)
+
   return updatedBoxPositions
 }
 
@@ -99,7 +100,10 @@ export function getNextPosition(
 
 export function isSolved(levelState: LevelState): boolean {
   for (const box of levelState.boxPositions) {
-    if (!levelState.level.goalPositions.has(box)) return false
+    if (!levelState.level.goalPositions.has(box)) {
+      return false
+    }
   }
+
   return true
 }
