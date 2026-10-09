@@ -1,3 +1,4 @@
+import { readHexColor } from '../render/colors'
 import { ROLE_ORDER, type TileRole } from '../render/tile-roles'
 import type { CustomTile, CustomTiles, EditorDocument } from './document'
 import { clampSheetSettings, type SheetSettings } from '../render/sheet'
@@ -32,14 +33,16 @@ export type StoredSkin = {
  * a row shorter. `-` is the XSB alphabet's own explicit floor, so no row is ever
  * blank and the round trip is exact.
  *
- * The custom tiles ride alongside rather than inside, because XSB has nowhere to
- * put them: a flat position for the cell, and the placement for the art.
+ * The custom tiles and the ground colour ride alongside rather than inside,
+ * because XSB has nowhere to put either: a flat position for the cell, and the
+ * placement for the art.
  */
 export function encodeStoredLevel(editorDocument: EditorDocument): string {
   return JSON.stringify({
     version: STORED_VERSION,
     xsb: formatDocumentAsPublishedXsb(editorDocument),
     customTiles: Object.fromEntries(editorDocument.customTiles),
+    groundColor: editorDocument.groundColor,
   })
 }
 
@@ -64,6 +67,10 @@ export function decodeStoredLevel(text: string | null): EditorDocument | null {
       record.customTiles,
       editorDocument.width * editorDocument.height,
     ),
+    // A record written before the ground colour existed has none, which is what
+    // it was drawn with — so again the stored version did not have to move,
+    // because the field's absence already means what the old record meant.
+    groundColor: readHexColor(record.groundColor),
   }
 }
 

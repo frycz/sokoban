@@ -1,5 +1,6 @@
 import { parseStringToLevelState } from '../core/level'
 import type { Level, LevelState } from '../core/types'
+import { readHexColor } from '../render/colors'
 import { parseCustomTileMap, type CustomTileMap } from '../render/custom-tiles'
 import { createSkin, parseSkinManifest, type Skin } from '../render/skin'
 import { LEVEL } from './level-data'
@@ -12,6 +13,8 @@ export type PlayableLevel = {
   readonly skin: Skin | null
   /** The cells the author gave a tile of their own. Null when there are none. */
   readonly customTiles: CustomTileMap | null
+  /** The colour under the whole board. Null for a level that named none. */
+  readonly groundColor: string | null
 }
 
 export type LevelCatalog = {
@@ -72,7 +75,12 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
   const builtIn = readLevel('Built-in', LEVEL)
 
   if (builtIn.kind === 'level') {
-    levels.push({ ...builtIn.level, skin: null, customTiles: null })
+    levels.push({
+      ...builtIn.level,
+      skin: null,
+      customTiles: null,
+      groundColor: null,
+    })
   } else {
     problems.push(builtIn.message)
   }
@@ -82,8 +90,9 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
     .sort((one, other) => one.localeCompare(other))
 
   for (const slug of slugs) {
+    const record = readLevelRecord(slug)
     const read = readLevel(
-      readName(slug),
+      readName(record, slug),
       levelTexts[`/levels/${slug}/level.xsb`],
     )
 
@@ -113,6 +122,7 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
       skin: skin.kind === 'skin' ? skin.skin : null,
       customTiles:
         customTiles.kind === 'customTiles' ? customTiles.customTiles : null,
+      groundColor: readHexColor(record?.groundColor),
     })
   }
 
@@ -163,7 +173,10 @@ function loadCustomTiles(
 type LevelResult =
   | {
       readonly kind: 'level'
-      readonly level: Omit<PlayableLevel, 'skin' | 'customTiles'>
+      readonly level: Omit<
+        PlayableLevel,
+        'skin' | 'customTiles' | 'groundColor'
+      >
     }
   | { readonly kind: 'problem'; readonly message: string }
 
@@ -247,18 +260,30 @@ function getSlug(path: string): string {
 }
 
 /**
- * The display name, which is all `level.json` is for: XSB has no room for a
- * title, and the slug is a file name rather than something anyone chose to
- * read. Missing or malformed, the slug will do.
+ * Everything about a level that is not its cells: the name XSB has no room for,
+ * and the ground colour, which is not a tile for the skin to carry. Read once
+ * and handed to both readers rather than fetched per field.
  */
-function readName(slug: string): string {
+function readLevelRecord(slug: string): Record<string, unknown> | null {
   const record = levelRecords[`/levels/${slug}/level.json`]
 
   if (typeof record !== 'object' || record === null) {
-    return slug
+    return null
   }
 
-  const name = (record as Record<string, unknown>).name
+  return record as Record<string, unknown>
+}
+
+/**
+ * The display name, which is what `level.json` exists for: XSB has no room for a
+ * title, and the slug is a file name rather than something anyone chose to
+ * read. Missing or malformed, the slug will do.
+ */
+function readName(
+  record: Record<string, unknown> | null,
+  slug: string,
+): string {
+  const name = record?.name
 
   return typeof name === 'string' && name.trim() !== '' ? name : slug
 }

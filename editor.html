@@ -240,6 +240,21 @@
       .report .warning {
         color: #d7b36a;
       }
+      /* The ground is the level's, not the skin's, but it sits with the ink
+         because what it is for is what shows through a transparent tile. */
+      #ground .state {
+        margin-left: auto;
+        color: #7d8699;
+        font-size: 12px;
+      }
+      #ground .clear {
+        flex: 0 0 auto;
+        padding: 5px 8px;
+        color: #7d8699;
+      }
+      #ground .clear:hover:enabled {
+        color: #e07a7a;
+      }
       #role-list {
         display: flex;
         flex-direction: column;
@@ -512,6 +527,19 @@
             title="Keeps only the tile's shape and repaints every pixel it has — the full gamut, and what a monochrome stencil wants"
           >
             flat
+          </button>
+        </div>
+        <div class="row" id="ground">
+          <label for="ground-color">ground</label>
+          <input id="ground-color" type="color" value="#000000" />
+          <span class="state" id="ground-state">none</span>
+          <button
+            type="button"
+            class="clear"
+            id="ground-clear"
+            title="Draw the level onto nothing again, so it keeps its silhouette against the page"
+          >
+            ×
           </button>
         </div>
 

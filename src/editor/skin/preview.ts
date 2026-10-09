@@ -82,6 +82,21 @@ export function createSkinPreviewPainter(
     context.imageSmoothingEnabled = !draft.isPixelated
 
     const { tileSize } = layout
+
+    // The ground, under everything including the cells the silhouette culls, so
+    // the preview shows what the game will: the colour through every transparent
+    // pixel the skin has, and the colour alone where nothing is drawn at all.
+    // The board's own rectangle rather than the canvas, as in the game.
+    if (editorDocument.groundColor !== null) {
+      context.fillStyle = editorDocument.groundColor
+      context.fillRect(
+        layout.originX,
+        layout.originY,
+        editorDocument.width * tileSize,
+        editorDocument.height * tileSize,
+      )
+    }
+
     const grid = image
       ? getSheetGrid(draft.sheet, image.width, image.height)
       : null

@@ -32,11 +32,16 @@ type BoardLayout = {
  * `customTiles` are the cells the level's author gave a tile of their own. They
  * are columns in the atlas, so they need the skin: a bundle with tiles.json and
  * no skin.png has nothing for them to index, and the board draws without them.
+ *
+ * `groundColor` is the colour under the whole board, or null for none. Like the
+ * tiles it is the level's own, fixed for its lifetime, which is why it is a
+ * constructor argument rather than something read off the state.
  */
 export function createRenderer(
   canvas: HTMLCanvasElement,
   skin: Skin | null = null,
   customTiles: CustomTileMap | null = null,
+  groundColor: string | null = null,
 ): (levelState: LevelState) => void {
   const context = canvas.getContext('2d')
 
@@ -45,7 +50,7 @@ export function createRenderer(
   }
 
   return function render(levelState: LevelState): void {
-    const layout = prepareCanvas(canvas, context, levelState.level)
+    const layout = prepareCanvas(canvas, context, levelState.level, groundColor)
 
     if (skin) {
       context.imageSmoothingEnabled = !skin.isPixelated
@@ -59,14 +64,24 @@ export function createRenderer(
 }
 
 /**
- * Resizes the backing store to the element, clears it, and works out where the
- * board sits. Shared by both painters so a skinned and an unskinned board land
- * on exactly the same grid.
+ * Resizes the backing store to the element, clears it, lays the ground colour
+ * down if the level has one, and works out where the board sits. Shared by both
+ * painters so a skinned and an unskinned board land on exactly the same grid —
+ * and so the ground is under both.
+ *
+ * The ground covers the board's own rectangle rather than the whole canvas: it
+ * is the level's backdrop, not the page's, so the letterboxing around a board
+ * that does not match the canvas's shape stays the page's colour.
+ *
+ * Under everything, which is the whole point: it fills the cells the silhouette
+ * culls, it shows through every transparent pixel the skin has, and a level with
+ * a ground and no tiles at all is that colour and nothing else.
  */
 function prepareCanvas(
   canvas: HTMLCanvasElement,
   context: CanvasRenderingContext2D,
   level: Level,
+  groundColor: string | null,
 ): BoardLayout {
   const pixelRatio = window.devicePixelRatio || 1
   const cssWidth = canvas.clientWidth
@@ -81,11 +96,23 @@ function prepareCanvas(
     Math.min(cssWidth / level.width, cssHeight / level.height),
   )
 
-  return {
+  const layout = {
     tile,
     originX: Math.floor((cssWidth - tile * level.width) / 2),
     originY: Math.floor((cssHeight - tile * level.height) / 2),
   }
+
+  if (groundColor !== null) {
+    context.fillStyle = groundColor
+    context.fillRect(
+      layout.originX,
+      layout.originY,
+      tile * level.width,
+      tile * level.height,
+    )
+  }
+
+  return layout
 }
 
 function getTopLeft(

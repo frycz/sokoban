@@ -1,5 +1,7 @@
+import { readHexColor } from '../render/colors'
 import type { CustomTileMode } from '../render/custom-tiles'
 import type { LevelAutosave } from './autosave'
+import { NO_GROUND_COLOR } from './document'
 import {
   requireElement,
   downloadBlob,
@@ -136,6 +138,9 @@ export function createSkinMode(
   const roleList = requireElement<HTMLElement>('#role-list')
   const inkControls = requireElement<HTMLElement>('#ink')
   const inkColorInput = requireElement<HTMLInputElement>('#ink-color')
+  const groundColorInput = requireElement<HTMLInputElement>('#ground-color')
+  const groundState = requireElement<HTMLElement>('#ground-state')
+  const groundClearButton = requireElement<HTMLButtonElement>('#ground-clear')
   const atlasButton = requireElement<HTMLButtonElement>('#export-atlas')
   const manifestButton = requireElement<HTMLButtonElement>('#export-manifest')
 
@@ -164,6 +169,11 @@ export function createSkinMode(
   let showCustomTiles = true
   let hoverPosition = -1
   let isPlacing = false
+  // Whether the ground picker is mid-visit. A colour input fires `input` for
+  // every shade dragged through and `change` when the picker closes, so this is
+  // what folds one visit into one undo entry — the stroke a drag across cells
+  // gets, with the picker's own gesture for the boundary.
+  let isPickingGround = false
   // What storage already holds, as the two values it is made of rather than as
   // the text. The draft came out of storage, so the two start in step and
   // nothing is written back until the skin actually differs — and the test for
@@ -465,6 +475,25 @@ export function createSkinMode(
     }
   }
 
+  /**
+   * The ground is the document's, so the controls are drawn from it rather than
+   * from a copy kept here — which is also how they come back in step after an
+   * undo, a reset, or a level loaded from XSB.
+   *
+   * The picker keeps its own colour when there is no ground, so clearing one and
+   * picking again starts from the colour last chosen rather than from black.
+   */
+  function renderGroundControls(): void {
+    const { groundColor } = session.current()
+
+    groundState.textContent = groundColor ?? 'none'
+    groundClearButton.disabled = groundColor === null
+
+    if (groundColor !== null) {
+      groundColorInput.value = groundColor
+    }
+  }
+
   function paintPreviewOnly(): void {
     paintPreview(session.current(), draft, sheetImage, {
       showSkinTiles,
@@ -487,6 +516,7 @@ export function createSkinMode(
       paletteZoom.current(),
     )
     renderToolControls()
+    renderGroundControls()
     paletteZoom.syncControls()
     previewZoom.syncControls()
     paintPreviewOnly()
@@ -587,6 +617,7 @@ export function createSkinMode(
     showSkinTilesInput.checked = true
     showCustomTilesInput.checked = true
     hoverPosition = -1
+    isPickingGround = false
     savedDraft = draft
     savedSheetDataUrl = sheetDataUrl
     storageNote = null
@@ -843,6 +874,39 @@ export function createSkinMode(
    */
   inkColorInput.addEventListener('input', () => {
     ink = readTint({ color: inkColorInput.value, mode: ink.mode })
+  })
+
+  /**
+   * The ground colour, which is the level's rather than the skin's — it is this
+   * level's backdrop, it means the same against any sheet, and a level published
+   * with an unfinished skin still has it. So it goes through the session like a
+   * placement does: on the undo stack, and saved by the `level` slice.
+   *
+   * It sits by the ink all the same, because what it is for is what shows
+   * through a transparent tile.
+   */
+  groundColorInput.addEventListener('input', () => {
+    if (!isPickingGround) {
+      session.beginStroke()
+      isPickingGround = true
+    }
+
+    if (session.setGroundColor(readHexColor(groundColorInput.value))) {
+      update()
+    }
+  })
+
+  groundColorInput.addEventListener('change', () => {
+    isPickingGround = false
+  })
+
+  groundClearButton.addEventListener('click', () => {
+    isPickingGround = false
+    session.beginStroke()
+
+    if (session.setGroundColor(NO_GROUND_COLOR)) {
+      update()
+    }
   })
 
   inkControls.addEventListener('click', (event) => {

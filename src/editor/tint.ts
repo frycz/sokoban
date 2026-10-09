@@ -1,3 +1,5 @@
+import { readHexColor } from '../render/colors'
+
 /**
  * What a tint does to the pixels under it.
  *
@@ -43,18 +45,6 @@ export function getTintKey(tint: Tint): string {
   return `${tint.mode}:${tint.color}`
 }
 
-const COLOR_PATTERN = /^#[0-9a-f]{6}$/
-
-function readTintColor(value: unknown): string {
-  if (typeof value !== 'string') {
-    return WHITE
-  }
-
-  const color = value.trim().toLowerCase()
-
-  return COLOR_PATTERN.test(color) ? color : WHITE
-}
-
 /**
  * The one way a tint is built from values that have not been checked — storage,
  * a hand edit in devtools, the colour input's own string. Anything unusable
@@ -68,7 +58,7 @@ export function readTint(value: unknown): Tint {
   const record = value as Record<string, unknown>
 
   return {
-    color: readTintColor(record.color),
+    color: readHexColor(record.color) ?? WHITE,
     mode: record.mode === 'flat' ? 'flat' : 'multiply',
   }
 }

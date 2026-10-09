@@ -80,6 +80,10 @@ export function createPublishPanel(
       body: JSON.stringify({
         name,
         xsb: formatDocumentAsPublishedXsb(session.current()),
+        // Level data rather than skin data, so it travels beside the XSB and
+        // lands in `level.json`: a level published with an unfinished skin — no
+        // tiles at all — still has its ground.
+        groundColor: session.current().groundColor,
         skin,
       }),
     }

@@ -1,6 +1,7 @@
 import {
   FLOOR_CELL,
   NO_CUSTOM_TILES,
+  NO_GROUND_COLOR,
   WALL_CELL,
   getCellX,
   getCellY,
@@ -73,9 +74,16 @@ export function parseXsbToDocument(text: string): EditorDocument {
     }
   }
 
-  // XSB has nowhere to put a per-cell tile, so loaded text is always a level
-  // with none; the placements live beside the cells rather than in the format.
-  return { width, height, cells, customTiles: NO_CUSTOM_TILES }
+  // XSB has nowhere to put a per-cell tile or a ground colour, so loaded text is
+  // always a level with neither; both live beside the cells rather than in the
+  // format.
+  return {
+    width,
+    height,
+    cells,
+    customTiles: NO_CUSTOM_TILES,
+    groundColor: NO_GROUND_COLOR,
+  }
 }
 
 export function formatDocumentAsXsb(editorDocument: EditorDocument): string {

@@ -7,10 +7,12 @@ import {
   isCellOverwritten,
   MAX_DOCUMENT_SIZE,
   MIN_DOCUMENT_SIZE,
+  NO_GROUND_COLOR,
   paintDocument,
   recolorCustomTile,
   resizeDocument,
   setCustomTile,
+  setGroundColor,
   swapCustomTileMode,
 } from './document'
 import { NO_TINT, type Tint } from './tint'
@@ -201,6 +203,45 @@ describe('custom tiles', () => {
     expect(setCustomTile(start, 9, 7, 'onTop', NO_TINT)).toBe(start)
     expect(setCustomTile(start, middle, -1, 'onTop', NO_TINT)).toBe(start)
     expect(setCustomTile(start, middle, 1.5, 'onTop', NO_TINT)).toBe(start)
+  })
+})
+
+describe('setGroundColor', () => {
+  const start = createEmptyDocument(3, 3)
+
+  it('sets the colour under the board and takes it off again', () => {
+    const grounded = setGroundColor(start, '#102030')
+
+    expect(start.groundColor).toBe(NO_GROUND_COLOR)
+    expect(grounded.groundColor).toBe('#102030')
+    expect(setGroundColor(grounded, NO_GROUND_COLOR).groundColor).toBe(
+      NO_GROUND_COLOR,
+    )
+  })
+
+  it('leaves the cells and the placements alone — it is a backdrop, not a tile', () => {
+    const placed = setCustomTile(start, 4, 7, 'onTop', GREEN)
+    const grounded = setGroundColor(placed, '#102030')
+
+    expect(grounded.cells).toBe(placed.cells)
+    expect(grounded.customTiles).toBe(placed.customTiles)
+  })
+
+  it('returns the same document when the ground is already that', () => {
+    const grounded = setGroundColor(start, '#102030')
+
+    expect(setGroundColor(grounded, '#102030')).toBe(grounded)
+    expect(setGroundColor(start, NO_GROUND_COLOR)).toBe(start)
+  })
+
+  /**
+   * Unlike a placement, the ground is not an index into anything, so a resize
+   * has nothing to rewrite and nothing to drop.
+   */
+  it('survives a resize', () => {
+    expect(
+      resizeDocument(setGroundColor(start, '#102030'), 8, 8).groundColor,
+    ).toBe('#102030')
   })
 })
 

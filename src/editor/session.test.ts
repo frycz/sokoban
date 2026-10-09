@@ -80,6 +80,27 @@ describe('createSession', () => {
     )
   })
 
+  /**
+   * One visit to the colour picker is one undo entry: the input fires for every
+   * shade dragged through, and undoing back through each of them would be
+   * unusable.
+   */
+  it('folds a drag through the ground colours into a single undo entry', () => {
+    const session = createSession(createEmptyDocument(3, 3))
+
+    session.beginStroke()
+
+    expect(session.setGroundColor('#112233')).toBe(true)
+    expect(session.setGroundColor('#223344')).toBe(true)
+    expect(session.setGroundColor('#223344')).toBe(false)
+    expect(session.current().groundColor).toBe('#223344')
+
+    session.undo()
+
+    expect(session.current().groundColor).toBeNull()
+    expect(session.canUndo()).toBe(false)
+  })
+
   it('does not fold a paint into a stroke that undo has already closed', () => {
     const session = createSession(createEmptyDocument(4, 3))
 

@@ -6,6 +6,7 @@ import {
   recolorCustomTile,
   resizeDocument,
   setCustomTile,
+  setGroundColor,
   swapCustomTileMode,
   type Brush,
   type EditorDocument,
@@ -37,6 +38,13 @@ export type Session = {
   recolorCustomTile: (position: number, tint: Tint) => boolean
   /** Every placement at once — what a new or re-sliced sheet invalidates. */
   eraseAllCustomTiles: () => boolean
+  /**
+   * The colour under the whole board, or null for none. A stroke like the
+   * placement tools, because a colour input fires continuously while it is
+   * dragged: one entry per visit to the picker rather than one per shade passed
+   * through on the way.
+   */
+  setGroundColor: (groundColor: string | null) => boolean
   resize: (width: number, height: number) => boolean
   /** Replaces the document wholesale — a new level, or loaded XSB. */
   replace: (editorDocument: EditorDocument) => void
@@ -116,6 +124,10 @@ export function createSession(initial: EditorDocument): Session {
     return true
   }
 
+  function setGround(groundColor: string | null): boolean {
+    return stroke(setGroundColor(current(), groundColor))
+  }
+
   function resize(width: number, height: number): boolean {
     const resized = resizeDocument(current(), width, height)
 
@@ -151,6 +163,7 @@ export function createSession(initial: EditorDocument): Session {
     swapCustomTileMode: swapMode,
     recolorCustomTile: recolor,
     eraseAllCustomTiles,
+    setGroundColor: setGround,
     resize,
     replace: commit,
     undo,

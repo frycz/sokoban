@@ -85,7 +85,16 @@ async function handle(
   await writeFile(join(directory, 'level.xsb'), `${payload.xsb}\n`, 'utf8')
   await writeFile(
     join(directory, 'level.json'),
-    `${JSON.stringify({ name: payload.name }, null, 2)}\n`,
+    // The ground colour only when there is one, so a level with no ground
+    // writes exactly the file it always did and the field's absence keeps
+    // meaning what it means everywhere else: drawn onto nothing.
+    `${JSON.stringify(
+      payload.groundColor === null
+        ? { name: payload.name }
+        : { name: payload.name, groundColor: payload.groundColor },
+      null,
+      2,
+    )}\n`,
     'utf8',
   )
 
@@ -127,8 +136,17 @@ type ExportRequest = {
   readonly name: string
   readonly slug: string
   readonly xsb: string
+  readonly groundColor: string | null
   readonly skin: SkinPayload | null
 }
+
+/**
+ * Checked here rather than taken on trust, for the reason the slug is derived
+ * here: this is what writes the file, and a colour the game's own reader would
+ * throw away is one the bundle should never have held. Spelled out rather than
+ * imported, because `tools/` may import `core/` and nothing else.
+ */
+const GROUND_COLOR_PATTERN = /^#[0-9a-f]{6}$/
 
 /** Returns the request, or the message to refuse it with. */
 function parsePayload(body: string): ExportRequest | string {
@@ -162,7 +180,37 @@ function parsePayload(body: string): ExportRequest | string {
     return skin
   }
 
-  return { name: record.name.trim(), slug, xsb: record.xsb, skin }
+  const ground = parseGroundColor(record.groundColor)
+
+  if (typeof ground === 'string') {
+    return ground
+  }
+
+  return {
+    name: record.name.trim(),
+    slug,
+    xsb: record.xsb,
+    groundColor: ground.color,
+    skin,
+  }
+}
+
+/**
+ * The ground, or the message to refuse the export with. Wrapped rather than
+ * returned bare, because a colour is a string and so is a refusal.
+ */
+function parseGroundColor(
+  value: unknown,
+): { readonly color: string | null } | string {
+  if (value === null || value === undefined) {
+    return { color: null }
+  }
+
+  if (typeof value !== 'string' || !GROUND_COLOR_PATTERN.test(value)) {
+    return 'The ground colour was not a #rrggbb colour.'
+  }
+
+  return { color: value }
 }
 
 function parseSkin(value: unknown): SkinPayload | null | string {

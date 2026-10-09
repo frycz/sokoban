@@ -160,8 +160,8 @@ Full redraw every time is deliberate: it keeps the renderer a pure function of s
 
 | File              | Role                                                                                                               |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `canvas.ts`       | the two painters — tiles when there is a skin, flat colour when there is not                                       |
-| `colors.ts`       | the palette, a leaf                                                                                                |
+| `canvas.ts`       | the two painters — tiles when there is a skin, flat colour when there is not — over the level's ground             |
+| `colors.ts`       | the palette, and `readHexColor` — the one way a colour the author picked arrives from outside. A leaf              |
 | `tile-roles.ts`   | `ROLE_ORDER`, `TileRole`, and the wall classifier, a leaf                                                          |
 | `sheet.ts`        | how to cut a grid of tiles out of an image. Pure                                                                   |
 | `skin.ts`         | a manifest parsed, bound to its atlas, and resolved to a rect per role — or per column, for the custom tiles. Pure |
@@ -202,7 +202,7 @@ per level, named by a slug of the level's name:
 ```
 levels/quarry-steps/
   level.xsb    the level, standard XSB
-  level.json   { "name": "Quarry Steps" }
+  level.json   { "name": "Quarry Steps", "groundColor": "#1a2b3c" }
   skin.png     the packed atlas        — optional
   skin.json    the manifest for it     — optional
   tiles.json   the cells with art of   — optional, and only with a skin
@@ -217,10 +217,60 @@ place, which includes deleting `skin.png` and `skin.json` when the new export ha
 no tiles — a level paired with the previous level's art would be worse than
 either.
 
-`level.json` exists for one field. XSB has nowhere to put a title — a `Title:`
-line is exactly the kind of character the parser refuses — and a slug is a file
-name rather than something someone chose to read. Anything else a level grows
-later (author, par, a solution) goes in the same file.
+`level.json` is everything about a level that is not its cells. XSB has nowhere
+to put a title — a `Title:` line is exactly the kind of character the parser
+refuses — and a slug is a file name rather than something someone chose to read.
+The ground colour is there for the same reason, and anything else a level grows
+later (author, par, a solution) goes in the same file. Both fields are read
+leniently: a missing or malformed name falls back to the slug, and a ground
+colour that is not `#rrggbb` reads as no ground, because a colour the canvas
+would reject silently is worse than one that was never there.
+
+### The ground colour is the level's backdrop
+
+A level may name one colour that sits under everything: it fills the cells the
+silhouette culls, it shows through every transparent pixel the skin has, and a
+level with a ground and no tiles at all is that colour and nothing else. That
+last case is the point — it is what makes a stencil sheet usable, where the art
+is shape and the colour has to come from somewhere.
+
+It is level data rather than skin data, so it rides in `level.json` beside the
+name:
+
+- It means the same against any sheet, so unlike a binding nothing invalidates
+  it — not loading a sheet, not re-slicing one, not a resize.
+- A level published with an unfinished skin has no `skin.json` at all, and
+  losing its backdrop with its tiles would be wrong: the ground is what the
+  level is drawn onto, not one of the things drawn on it.
+- Nothing can bind it and no art names it. It is not a tile, so it does not take
+  a role or a column.
+
+In the game it is a `createRenderer` argument like the skin and the custom tiles
+— the level's own, fixed for its lifetime, rather than anything read off the
+state — and `prepareCanvas` lays it down, so a skinned and an unskinned board
+are over the same ground. It covers the board's own rectangle rather than the
+whole canvas: it is the level's backdrop and not the page's, so the letterboxing
+around a board whose shape does not match the canvas stays the page's colour.
+
+It is also the one colour the game learns, which is the exception to "colour is
+baked into the atlas" below — and it has to be, because there are no pixels for
+it to be baked into. A fill is not art.
+
+In the editor it lives on `EditorDocument` for the same reasons a placement
+does: it rides the undo stack, it is written by the `level` autosave slice, and
+it goes away when the document does. The control sits in skin mode's sidebar
+next to the ink all the same, because what it is for is what shows through a
+transparent tile — the same "both panels edit the level" arrangement the custom
+tiles have. Level mode's own canvas does not draw it, because there every floor
+is an opaque flat colour and nothing would show.
+
+A colour input fires `input` for every shade dragged through, so one visit to
+the picker is one undo entry: the first event opens a stroke and `change`
+closes it, which is the picker's own gesture for what a drag across cells gets
+from `beginStroke`. "No ground" is a real absence rather than a colour that
+happens to change nothing — the way `NO_TINT` is — so the row has a `×` beside
+the swatch, and the picker keeps its colour afterwards so clearing and picking
+again does not start from black.
 
 ### Custom tiles are the level's, not the skin's
 
@@ -390,21 +440,21 @@ layout.ts │  stored-state.ts │            pure
                                          publish.ts, index.ts
 ```
 
-| File               | Role                                                                                                                                            |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `document.ts`      | `EditorDocument`, `Cell`, `Brush`, `CustomTiles`, and the pure edits: `createEmptyDocument`, `paintDocument`, `setCustomTile`, `resizeDocument` |
-| `xsb.ts`           | `parseXsbToDocument` / `formatDocumentAsXsb` — the only text I/O                                                                                |
-| `validate.ts`      | `validateDocument(document)` → problems, counts, `isPlayable`                                                                                   |
-| `stored-state.ts`  | encode / decode of what autosave keeps, for both modes. Pure                                                                                    |
-| `session.ts`       | the undo stack, the editor's one mutable value. No DOM                                                                                          |
-| `autosave.ts`      | the `level` slice: what the editor opens on, and the write both modes share                                                                     |
-| `layout.ts`        | tile size, origin, the canvas size a zoom needs, and pixel → cell. Pure                                                                         |
-| `canvas.ts`        | `(document, hoverPosition, zoom) => draw`. No logic                                                                                             |
-| `zoom.ts`          | the zoom shared by the three scrolling views: two buttons, ctrl + wheel, scroll anchoring, and where the steps stop                             |
-| `backing-store.ts` | the canvas resize all three zooming painters share, and the pixel budget the zoom stops at                                                      |
-| `storage.ts`       | the three `localStorage` keys, every call guarded. Imports nothing                                                                              |
-| `publish.ts`       | the Export to levels/ panel: gate on `validateDocument`, then post the bundle                                                                   |
-| `index.ts`         | the mode switch, Clear storage, and the keys and resizes each mode gets                                                                         |
+| File               | Role                                                                                                                                                              |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `document.ts`      | `EditorDocument`, `Cell`, `Brush`, `CustomTiles`, and the pure edits: `createEmptyDocument`, `paintDocument`, `setCustomTile`, `setGroundColor`, `resizeDocument` |
+| `xsb.ts`           | `parseXsbToDocument` / `formatDocumentAsXsb` — the only text I/O                                                                                                  |
+| `validate.ts`      | `validateDocument(document)` → problems, counts, `isPlayable`                                                                                                     |
+| `stored-state.ts`  | encode / decode of what autosave keeps, for both modes. Pure                                                                                                      |
+| `session.ts`       | the undo stack, the editor's one mutable value. No DOM                                                                                                            |
+| `autosave.ts`      | the `level` slice: what the editor opens on, and the write both modes share                                                                                       |
+| `layout.ts`        | tile size, origin, the canvas size a zoom needs, and pixel → cell. Pure                                                                                           |
+| `canvas.ts`        | `(document, hoverPosition, zoom) => draw`. No logic                                                                                                               |
+| `zoom.ts`          | the zoom shared by the three scrolling views: two buttons, ctrl + wheel, scroll anchoring, and where the steps stop                                               |
+| `backing-store.ts` | the canvas resize all three zooming painters share, and the pixel budget the zoom stops at                                                                        |
+| `storage.ts`       | the three `localStorage` keys, every call guarded. Imports nothing                                                                                                |
+| `publish.ts`       | the Export to levels/ panel: gate on `validateDocument`, then post the bundle                                                                                     |
+| `index.ts`         | the mode switch, Clear storage, and the keys and resizes each mode gets                                                                                           |
 
 `backing-store.ts` is left out of the diagram to keep it readable: it is a leaf under `canvas.ts` and `zoom.ts`, and under the two painters in `skin/` as well, which is the point of it — the pixel budget the zoom stops at and the resize that honours it are one number in one place.
 
@@ -450,7 +500,7 @@ The undo stack does not persist. A reload is a new session, and the document is 
 
 Storing it in the format the editor already reads and writes means there is no second level codec to keep in step. The substitution is the catch: `parseXsbToDocument` trims blank lines off the top and bottom, so a document whose first row is all floor would come back a row shorter. `-` is the XSB alphabet's own explicit floor, so no row is ever blank and the round trip is exact. `stored-state.test.ts` asserts it on exactly that document.
 
-The custom tiles ride alongside the text rather than inside it, as a position → sheet index object, because XSB has nowhere to put them. A record written before they existed simply has none, which is why the stored version did not have to move: the field's absence already means the right thing.
+The custom tiles ride alongside the text rather than inside it, as a position → sheet index object, because XSB has nowhere to put them. A record written before they existed simply has none, which is why the stored version did not have to move: the field's absence already means the right thing. The ground colour rides alongside for the same reason and reads back the same way — no ground is what an older record was drawn with.
 
 #### A skin is stored with its sheet
 
@@ -524,7 +574,7 @@ Multiplying by white is the no-op, which is why "no tint" is a value rather than
 
 Hue and saturation sliders, and palette remapping, are deliberately absent: on multicoloured art they are numbers you cannot predict per tile, and the stencil case — the one that actually prompted this — does not need them.
 
-**The game never learns what colour is.** `tintSheetTile` is applied when the atlas is packed, so a tint ships as pixels. `skin.json` and `tiles.json` are byte for byte what an untinted skin writes, `render/` stays `(state) => draw` with no tint cache and no per-frame compositing, and there is no colour for a bundle's loader to validate. What it costs is that a column is a tile _and_ an ink, so one sprite placed in two inks is two atlas columns — bounded by the number of distinct inks, which is small for hand-placed art and zero for role bindings, since those get a column each regardless. It also means an exported atlas cannot be re-tinted, and nothing can tint at runtime; the editor is the authoring tool and holds the draft in autosave, so re-exporting is the undo, and no runtime effect wants this today.
+**The game never learns what a tint is.** `tintSheetTile` is applied when the atlas is packed, so a tint ships as pixels. (The ground colour is the one colour the game is told — see "The ground colour is the level's backdrop". It has no art to be baked into, which is exactly what makes it the exception rather than a crack in the rule.) `skin.json` and `tiles.json` are byte for byte what an untinted skin writes, `render/` stays `(state) => draw` with no tint cache and no per-frame compositing, and there is no colour for a bundle's loader to validate. What it costs is that a column is a tile _and_ an ink, so one sprite placed in two inks is two atlas columns — bounded by the number of distinct inks, which is small for hand-placed art and zero for role bindings, since those get a column each regardless. It also means an exported atlas cannot be re-tinted, and nothing can tint at runtime; the editor is the authoring tool and holds the draft in autosave, so re-exporting is the undo, and no runtime effect wants this today.
 
 `tintSheetTile` returns a tile of its own rather than tinting at the draw call, because the export has to extrude the tinted _edges_ and the preview has to scale them — both need the finished pixels in isolation, with no neighbour in the sheet to sample. Every path goes through it, the identity tint included, so the preview, the sidebar thumbnails and the exported atlas cannot be different pixels; `createTintedTileCache` is what makes that affordable, since the preview repaints the whole board on every pointer move.
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { xsb } from '../core/test-helpers'
-import { setCustomTile } from './document'
+import { setCustomTile, setGroundColor } from './document'
 import {
   bindRole,
   createEmptySkinDraft,
@@ -36,6 +36,17 @@ function storedLevelWith(customTiles: Record<string, unknown>): string {
       unknown
     >),
     customTiles,
+  })
+}
+
+/** A stored record for `LEVEL` with its ground colour replaced wholesale. */
+function storedLevelGround(groundColor: unknown): string {
+  return JSON.stringify({
+    ...(JSON.parse(encodeStoredLevel(parseXsbToDocument(LEVEL))) as Record<
+      string,
+      unknown
+    >),
+    groundColor,
   })
 }
 
@@ -154,6 +165,29 @@ describe('stored level', () => {
       ],
       [2, { tileIndex: 4, mode: 'onTop', tint: NO_TINT }],
     ])
+  })
+
+  /**
+   * The ground colour is the other thing XSB has nowhere to put. A record
+   * written before it existed has none, which is what it was drawn with, so its
+   * absence already means the right thing and the stored version did not move.
+   */
+  it('keeps the ground colour, and reads a missing or unusable one as none', () => {
+    const grounded = setGroundColor(parseXsbToDocument(LEVEL), '#102030')
+
+    expect(decodeStoredLevel(encodeStoredLevel(grounded))?.groundColor).toBe(
+      '#102030',
+    )
+    expect(
+      decodeStoredLevel(encodeStoredLevel(parseXsbToDocument(LEVEL)))
+        ?.groundColor,
+    ).toBeNull()
+    expect(
+      decodeStoredLevel(storedLevelGround('rebeccapurple'))?.groundColor,
+    ).toBeNull()
+    expect(decodeStoredLevel(storedLevelGround('#ABC123'))?.groundColor).toBe(
+      '#abc123',
+    )
   })
 
   it('ignores a record whose level no longer parses', () => {

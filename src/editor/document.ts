@@ -54,7 +54,22 @@ export type EditorDocument = {
   readonly height: number
   readonly cells: readonly Cell[]
   readonly customTiles: CustomTiles
+  /**
+   * The colour under the whole board, or null for none — see
+   * `NO_GROUND_COLOR`.
+   */
+  readonly groundColor: string | null
 }
+
+/**
+ * No ground, which is what a level has unless its author says otherwise: the
+ * board is drawn onto nothing and keeps its silhouette against the page.
+ *
+ * Unlike a tint, "none" cannot be a colour that happens to change nothing — any
+ * colour at all fills the cells the silhouette culls and backs every
+ * transparent pixel — so this one really is an absence.
+ */
+export const NO_GROUND_COLOR = null
 
 /**
  * The palette. `wall` and `floor` replace a cell outright, so `floor` is also
@@ -105,6 +120,7 @@ export function createEmptyDocument(
     height: clampedHeight,
     cells: new Array<Cell>(clampedWidth * clampedHeight).fill(WALL_CELL),
     customTiles: NO_CUSTOM_TILES,
+    groundColor: NO_GROUND_COLOR,
   }
 }
 
@@ -294,6 +310,29 @@ export function clearCustomTile(
   return { ...editorDocument, customTiles }
 }
 
+/**
+ * The colour under the whole board, or `NO_GROUND_COLOR` for none. Returns the
+ * same document when it already has that ground, so a colour input dragged back
+ * to where it started records nothing — the identity contract every edit here
+ * has.
+ *
+ * It is level data rather than skin data for the same reason a placement is: it
+ * is this level's backdrop, it means the same against any sheet, and a level
+ * published with an unfinished skin still has it. What it is not is a tile — no
+ * art names it and nothing can bind it — which is why it sits beside the cells
+ * rather than taking a role.
+ */
+export function setGroundColor(
+  editorDocument: EditorDocument,
+  groundColor: string | null,
+): EditorDocument {
+  if (groundColor === editorDocument.groundColor) {
+    return editorDocument
+  }
+
+  return { ...editorDocument, groundColor }
+}
+
 /** Whether the skin's own layers are suppressed on this cell. */
 export function isCellOverwritten(
   editorDocument: EditorDocument,
@@ -359,7 +398,13 @@ export function resizeDocument(
     }
   }
 
-  return { width: clampedWidth, height: clampedHeight, cells, customTiles }
+  return {
+    width: clampedWidth,
+    height: clampedHeight,
+    cells,
+    customTiles,
+    groundColor: editorDocument.groundColor,
+  }
 }
 
 export function countCells(
