@@ -1,5 +1,6 @@
 import { readHexColor } from '../render/colors'
 import { ROLE_ORDER, type TileRole } from '../render/tile-roles'
+import type { ColorPalette, ColorPaletteLibrary } from './color-palettes'
 import type { CustomTile, CustomTiles, EditorDocument } from './document'
 import { clampSheetSettings, type SheetSettings } from '../render/sheet'
 import {
@@ -170,6 +171,79 @@ export function decodeStoredSkin(text: string | null): StoredSkin | null {
     draft: sheetDataUrl === null ? clearBindings(draft) : draft,
     sheetDataUrl,
   }
+}
+
+/**
+ * The colour palettes, which are the one slice that is neither a level nor a
+ * skin: they outlive both, because a ramp is kept to draw the next level with.
+ */
+export function encodeStoredColorPalettes(
+  library: ColorPaletteLibrary,
+): string {
+  return JSON.stringify({
+    version: STORED_VERSION,
+    palettes: library.palettes,
+  })
+}
+
+/**
+ * Field by field like the skin is, and for the same reason. A palette with no
+ * usable id is dropped rather than given one, because an id is what two panels
+ * remember a choice by: inventing one here would hand back a palette that is
+ * not the palette that was stored.
+ */
+export function decodeStoredColorPalettes(
+  text: string | null,
+): ColorPaletteLibrary | null {
+  const record = readRecord(text)
+
+  if (!record || !Array.isArray(record.palettes)) {
+    return null
+  }
+
+  const palettes: ColorPalette[] = []
+  const takenIds = new Set<string>()
+
+  for (const entry of record.palettes) {
+    const stored = readObject(entry)
+    const id = typeof stored.id === 'string' ? stored.id : ''
+
+    if (id === '' || takenIds.has(id)) {
+      continue
+    }
+
+    takenIds.add(id)
+    palettes.push({
+      id,
+      name: typeof stored.name === 'string' ? stored.name : `palette ${id}`,
+      colors: readPaletteColors(stored.colors),
+    })
+  }
+
+  return { palettes }
+}
+
+/**
+ * Through `readHexColor`, so a colour the canvas would reject never comes back
+ * in — and deduplicated, because the edits above promise a palette holds each
+ * colour once and a hand edit in devtools is not held to that.
+ */
+function readPaletteColors(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const colors: string[] = []
+
+  for (const entry of value) {
+    const color = readHexColor(entry)
+
+    if (color !== null && !colors.includes(color)) {
+      colors.push(color)
+    }
+  }
+
+  return colors
 }
 
 function readRecord(text: string | null): Record<string, unknown> | null {

@@ -1,14 +1,19 @@
 import { readHexColor } from '../render/colors'
 import type { CustomTileMode } from '../render/custom-tiles'
 import type { LevelAutosave } from './autosave'
+import type { ColorPaletteLibraryStore } from './color-palette-library'
+import { resolveColorPalette } from './color-palettes'
 import { NO_GROUND_COLOR } from './document'
 import {
+  copyTextToClipboard,
   requireElement,
   downloadBlob,
   readDataUrlAsImageBitmap,
   readFileAsDataUrl,
   type EditorMode,
 } from './dom'
+import { parseHexColor } from './hex'
+import { readSwatchClick, renderSwatches, type SwatchAction } from './swatches'
 import { computeGridLayout, getPositionAtPixel } from './layout'
 import type { SkinExport } from './publish'
 import type { Session } from './session'
@@ -48,6 +53,17 @@ import { NO_TINT, readTint, type Tint } from './tint'
 import { createTintedTileCache } from './skin/tinted-tiles'
 
 const THUMBNAIL_SIZE = 24
+
+/**
+ * One action, because copying a hex is the whole of what this panel does with a
+ * palette: the two colours it has — the ink and the ground — are hex fields, so
+ * a copied colour is pasted into whichever of them it was wanted for. A pair of
+ * apply buttons per swatch would have to guess which, and guess wrong half the
+ * time.
+ */
+const PALETTE_SWATCH_ACTIONS: readonly SwatchAction[] = [
+  { action: 'copy', glyph: '⧉', title: 'Copy the hex' },
+]
 
 /**
  * The sidebar groups roles rather than listing fourteen flat, because the two
@@ -112,10 +128,15 @@ export type SkinMode = EditorMode & {
  * The custom tiles live on the document rather than in the draft, so skin mode
  * takes the level autosave too: placing a tile is an edit to the level, and the
  * `level` slice has to be written whichever panel made it.
+ *
+ * The palette library it only reads — colours mode owns the edits — so it takes
+ * the store rather than a library, and sees whatever was made in the other
+ * panel on arrival: `index.ts` redraws the incoming mode on every switch.
  */
 export function createSkinMode(
   session: Session,
   levelAutosave: LevelAutosave,
+  colorPalettes: ColorPaletteLibraryStore,
 ): SkinMode {
   const fileInput = requireElement<HTMLInputElement>('#sheet-file')
   const tileWidthInput = requireElement<HTMLInputElement>('#tile-width')
@@ -138,9 +159,15 @@ export function createSkinMode(
   const roleList = requireElement<HTMLElement>('#role-list')
   const inkControls = requireElement<HTMLElement>('#ink')
   const inkColorInput = requireElement<HTMLInputElement>('#ink-color')
+  const inkHexInput = requireElement<HTMLInputElement>('#ink-hex')
+  const inkCopyButton = requireElement<HTMLButtonElement>('#ink-copy')
   const groundColorInput = requireElement<HTMLInputElement>('#ground-color')
-  const groundState = requireElement<HTMLElement>('#ground-state')
+  const groundHexInput = requireElement<HTMLInputElement>('#ground-hex')
+  const groundCopyButton = requireElement<HTMLButtonElement>('#ground-copy')
   const groundClearButton = requireElement<HTMLButtonElement>('#ground-clear')
+  const paletteSelect = requireElement<HTMLSelectElement>('#skin-palette')
+  const paletteSwatches = requireElement<HTMLElement>('#skin-palette-swatches')
+  const paletteReport = requireElement<HTMLElement>('#skin-palette-report')
   const atlasButton = requireElement<HTMLButtonElement>('#export-atlas')
   const manifestButton = requireElement<HTMLButtonElement>('#export-manifest')
 
@@ -173,7 +200,18 @@ export function createSkinMode(
   // every shade dragged through and `change` when the picker closes, so this is
   // what folds one visit into one undo entry — the stroke a drag across cells
   // gets, with the picker's own gesture for the boundary.
-  let isPickingGround = false
+  // Whether the ground is mid-edit, from either control: the picker fires for
+  // every shade dragged through, and the hex field for every character typed.
+  // One undo entry per visit to either, which is what this folds them into.
+  let isEditingGround = false
+  // Which palette this panel is looking at, and the last thing the colour
+  // controls had to say. Both view state: a palette is chosen to copy out of,
+  // which is nothing the skin remembers.
+  let selectedPaletteId: string | null = null
+  let paletteNote: {
+    readonly message: string
+    readonly className: string
+  } | null = null
   // What storage already holds, as the two values it is made of rather than as
   // the text. The draft came out of storage, so the two start in step and
   // nothing is written back until the skin actually differs — and the test for
@@ -481,17 +519,109 @@ export function createSkinMode(
    * undo, a reset, or a level loaded from XSB.
    *
    * The picker keeps its own colour when there is no ground, so clearing one and
-   * picking again starts from the colour last chosen rather than from black.
+   * picking again starts from the colour last chosen rather than from black. The
+   * hex field is the one that says `none`, because it is the one that can be
+   * empty — which is also why it is never written to while it has focus: half a
+   * hex is a legitimate thing to be mid-way through typing.
    */
   function renderGroundControls(): void {
     const { groundColor } = session.current()
 
-    groundState.textContent = groundColor ?? 'none'
     groundClearButton.disabled = groundColor === null
+    groundCopyButton.disabled = groundColor === null
 
     if (groundColor !== null) {
       groundColorInput.value = groundColor
     }
+
+    if (document.activeElement !== groundHexInput) {
+      groundHexInput.value = groundColor ?? ''
+    }
+  }
+
+  /**
+   * The ink has no `none`, so its field is simply the colour — but it is the
+   * same deal otherwise: written from the ink unless the ink is what is being
+   * typed into it.
+   */
+  function renderInkControls(): void {
+    inkColorInput.value = ink.color
+
+    if (document.activeElement !== inkHexInput) {
+      inkHexInput.value = ink.color
+    }
+  }
+
+  /**
+   * The palettes made in colours mode, to copy a hex out of. Read on every
+   * redraw rather than cached, so a palette added in the other panel is here on
+   * the mode switch — the switch redraws the incoming mode.
+   */
+  function renderColorPalette(): void {
+    const library = colorPalettes.current()
+    const palette = resolveColorPalette(library, selectedPaletteId)
+    selectedPaletteId = palette?.id ?? null
+
+    paletteSelect.replaceChildren()
+    paletteSelect.disabled = library.palettes.length === 0
+
+    for (const entry of library.palettes) {
+      const option = document.createElement('option')
+      option.value = entry.id
+      option.textContent = `${entry.name} (${entry.colors.length})`
+      option.selected = entry.id === palette?.id
+      paletteSelect.append(option)
+    }
+
+    if (library.palettes.length === 0) {
+      const option = document.createElement('option')
+      option.textContent = 'no palettes yet'
+      paletteSelect.append(option)
+    }
+
+    renderSwatches(
+      paletteSwatches,
+      palette?.colors ?? [],
+      PALETTE_SWATCH_ACTIONS,
+      {
+        selectedIndex: -1,
+        emptyMessage:
+          library.palettes.length === 0
+            ? 'Make one in Colours mode.'
+            : 'This palette has no colours.',
+      },
+    )
+    renderPaletteNote()
+  }
+
+  /**
+   * Its own line rather than the status report, because the report is rebuilt
+   * from the skin on every redraw and this is about a colour: a "copied" would
+   * not survive the next hover.
+   */
+  function renderPaletteNote(): void {
+    paletteReport.replaceChildren()
+
+    if (paletteNote === null) {
+      return
+    }
+
+    const line = document.createElement('p')
+    line.className = paletteNote.className
+    line.textContent = paletteNote.message
+    paletteReport.append(line)
+  }
+
+  function copyHex(color: string): void {
+    void copyTextToClipboard(color).then((copied) => {
+      paletteNote = {
+        message: copied
+          ? `Copied ${color} — paste it into ink or ground.`
+          : `Could not reach the clipboard — ${color}`,
+        className: copied ? 'ok' : 'error',
+      }
+      renderPaletteNote()
+    })
   }
 
   function paintPreviewOnly(): void {
@@ -516,7 +646,9 @@ export function createSkinMode(
       paletteZoom.current(),
     )
     renderToolControls()
+    renderInkControls()
     renderGroundControls()
+    renderColorPalette()
     paletteZoom.syncControls()
     previewZoom.syncControls()
     paintPreviewOnly()
@@ -611,13 +743,14 @@ export function createSkinMode(
     previewTool = 'bind'
     placeMode = 'onTop'
     ink = NO_TINT
-    inkColorInput.value = ink.color
+    selectedPaletteId = null
+    paletteNote = null
     showSkinTiles = true
     showCustomTiles = true
     showSkinTilesInput.checked = true
     showCustomTilesInput.checked = true
     hoverPosition = -1
-    isPickingGround = false
+    isEditingGround = false
     savedDraft = draft
     savedSheetDataUrl = sheetDataUrl
     storageNote = null
@@ -871,10 +1004,34 @@ export function createSkinMode(
    * nothing until it is applied. Which is just as well — a colour input fires
    * `input` continuously while it is dragged, and `update()` rebuilds fourteen
    * role rows.
+   *
+   * The hex field beside it is the way a colour gets *in* from somewhere else —
+   * a palette, an art program, a screenshot someone picked a colour out of —
+   * and the way it gets back out, which the copy button is for. Only the picker
+   * is moved while it parses: the field keeps whatever was typed, because
+   * correcting half a hex under the caret is not help.
    */
   inkColorInput.addEventListener('input', () => {
     ink = readTint({ color: inkColorInput.value, mode: ink.mode })
+    inkHexInput.value = ink.color
   })
+
+  inkHexInput.addEventListener('input', () => {
+    const color = parseHexColor(inkHexInput.value)
+
+    if (color !== null) {
+      ink = readTint({ color, mode: ink.mode })
+      inkColorInput.value = color
+    }
+  })
+
+  // On the way out the field becomes the ink, so an abandoned half-hex does not
+  // sit there looking like the colour the next bind would use.
+  inkHexInput.addEventListener('change', () => {
+    inkHexInput.value = ink.color
+  })
+
+  inkCopyButton.addEventListener('click', () => copyHex(ink.color))
 
   /**
    * The ground colour, which is the level's rather than the skin's — it is this
@@ -885,28 +1042,92 @@ export function createSkinMode(
    * It sits by the ink all the same, because what it is for is what shows
    * through a transparent tile.
    */
-  groundColorInput.addEventListener('input', () => {
-    if (!isPickingGround) {
+  function editGround(groundColor: string | null): void {
+    if (!isEditingGround) {
       session.beginStroke()
-      isPickingGround = true
+      isEditingGround = true
     }
 
-    if (session.setGroundColor(readHexColor(groundColorInput.value))) {
+    if (session.setGroundColor(groundColor)) {
       update()
     }
+  }
+
+  groundColorInput.addEventListener('input', () => {
+    editGround(readHexColor(groundColorInput.value))
   })
 
   groundColorInput.addEventListener('change', () => {
-    isPickingGround = false
+    isEditingGround = false
+  })
+
+  /**
+   * Typed or pasted hex, live — so the board behind it changes as the colour
+   * arrives, which is the whole reason to paste one here rather than drag the
+   * picker to it. Emptying the field is how the ground is cleared by typing,
+   * the same thing the × does.
+   */
+  groundHexInput.addEventListener('input', () => {
+    const text = groundHexInput.value.trim()
+
+    if (text === '') {
+      editGround(NO_GROUND_COLOR)
+
+      return
+    }
+
+    const color = parseHexColor(text)
+
+    if (color !== null) {
+      groundColorInput.value = color
+      editGround(color)
+    }
+  })
+
+  // One undo entry per visit, so the field's own gesture ends the stroke the
+  // way the picker's closing does.
+  groundHexInput.addEventListener('change', () => {
+    isEditingGround = false
+    renderGroundControls()
+  })
+
+  groundCopyButton.addEventListener('click', () => {
+    const { groundColor } = session.current()
+
+    if (groundColor !== null) {
+      copyHex(groundColor)
+    }
   })
 
   groundClearButton.addEventListener('click', () => {
-    isPickingGround = false
+    isEditingGround = false
     session.beginStroke()
 
     if (session.setGroundColor(NO_GROUND_COLOR)) {
       update()
     }
+  })
+
+  paletteSelect.addEventListener('change', () => {
+    selectedPaletteId = paletteSelect.value
+    paletteNote = null
+    renderColorPalette()
+  })
+
+  paletteSwatches.addEventListener('click', (event) => {
+    const click = readSwatchClick(event.target as Element)
+    const palette = resolveColorPalette(
+      colorPalettes.current(),
+      selectedPaletteId,
+    )
+
+    if (click === null || palette === null) {
+      return
+    }
+
+    // Both actions a row offers are the same one: the chip is a big target for
+    // the copy the button spells out.
+    copyHex(palette.colors[click.index])
   })
 
   inkControls.addEventListener('click', (event) => {

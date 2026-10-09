@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { xsb } from '../core/test-helpers'
+import {
+  EMPTY_COLOR_PALETTE_LIBRARY,
+  type ColorPaletteLibrary,
+} from './color-palettes'
 import { setCustomTile, setGroundColor } from './document'
 import {
   bindRole,
@@ -9,8 +13,10 @@ import {
 } from './skin/skin'
 import { NO_TINT, type Tint } from './tint'
 import {
+  decodeStoredColorPalettes,
   decodeStoredLevel,
   decodeStoredSkin,
+  encodeStoredColorPalettes,
   encodeStoredLevel,
   encodeStoredSkin,
 } from './stored-state'
@@ -290,5 +296,69 @@ describe('stored skin', () => {
     expect(decodeStoredSkin(null)).toBeNull()
     expect(decodeStoredSkin('not json')).toBeNull()
     expect(decodeStoredSkin(JSON.stringify({ version: 2 }))).toBeNull()
+  })
+})
+
+describe('the stored colour palettes', () => {
+  const LIBRARY: ColorPaletteLibrary = {
+    palettes: [
+      { id: '1', name: 'sweetie', colors: ['#1a1c2c', '#5d275d'] },
+      { id: '2', name: 'dawn', colors: [] },
+    ],
+  }
+
+  it('round trips a library', () => {
+    expect(
+      decodeStoredColorPalettes(encodeStoredColorPalettes(LIBRARY)),
+    ).toEqual(LIBRARY)
+  })
+
+  it('keeps an empty library apart from no record at all', () => {
+    expect(
+      decodeStoredColorPalettes(
+        encodeStoredColorPalettes(EMPTY_COLOR_PALETTE_LIBRARY),
+      ),
+    ).toEqual(EMPTY_COLOR_PALETTE_LIBRARY)
+    expect(decodeStoredColorPalettes(null)).toBeNull()
+    expect(decodeStoredColorPalettes(JSON.stringify({ version: 2 }))).toBeNull()
+  })
+
+  /**
+   * An id is what two panels remember a choice by, so a palette without one is
+   * dropped rather than given one: an invented id is not the id that was stored.
+   */
+  it('drops a palette with no usable id, and a second claim on one', () => {
+    const restored = decodeStoredColorPalettes(
+      JSON.stringify({
+        version: 1,
+        palettes: [
+          { name: 'no id', colors: [] },
+          { id: '1', name: 'first', colors: [] },
+          { id: '1', name: 'again', colors: [] },
+        ],
+      }),
+    )
+
+    expect(restored?.palettes).toEqual([{ id: '1', name: 'first', colors: [] }])
+  })
+
+  it('keeps only colours the canvas would accept, each once', () => {
+    const restored = decodeStoredColorPalettes(
+      JSON.stringify({
+        version: 1,
+        palettes: [
+          {
+            id: '1',
+            colors: ['#1A1C2C', '#1a1c2c', 'rebeccapurple', 7, null, '#fff'],
+          },
+        ],
+      }),
+    )
+
+    expect(restored?.palettes[0]).toEqual({
+      id: '1',
+      name: 'palette 1',
+      colors: ['#1a1c2c'],
+    })
   })
 })

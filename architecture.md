@@ -16,6 +16,9 @@ src/editor/     document.ts, xsb.ts, validate.ts,       level mode, same pure/sh
                 session.ts, layout.ts, canvas.ts,       plus autosave:
                 level-mode.ts, dom.ts, zoom.ts,         stored-state.ts, autosave.ts,
                 index.ts, publish.ts, tint.ts           storage.ts — and the export to levels/
+                colors-mode.ts, color-palettes.ts,      colours mode: palettes kept beside
+                color-palette-library.ts, hex.ts,       the level, for both colour panels
+                swatches.ts
 src/editor/skin/ skin.ts, roles.ts, atlas.ts,           skin mode
                  custom-tiles.ts, palette.ts,
                  palette-layout.ts, preview.ts,
@@ -437,7 +440,20 @@ layout.ts │  stored-state.ts │            pure
       │        │   │         │
     canvas.ts  zoom.ts  │  storage.ts │   localStorage: a leaf
         └─────────┴─────┴──────┴──────┴→ the DOM: level-mode.ts, skin-mode.ts,
-                                         publish.ts, index.ts
+                                         colors-mode.ts, publish.ts, index.ts
+
+The colour palettes hang off the same spine, with their own slice:
+
+```
+
+render/colors.ts the hex format, shared
+↑
+hex.ts color-palettes.ts pure
+│ ↑
+│ color-palette-library.ts mutable, no DOM — the slice
+│ │
+└── swatches.ts ─┴→ colors-mode.ts, skin-mode.ts the DOM
+
 ```
 
 | File               | Role                                                                                                                                                              |
@@ -452,9 +468,14 @@ layout.ts │  stored-state.ts │            pure
 | `canvas.ts`        | `(document, hoverPosition, zoom) => draw`. No logic                                                                                                               |
 | `zoom.ts`          | the zoom shared by the three scrolling views: two buttons, ctrl + wheel, scroll anchoring, and where the steps stop                                               |
 | `backing-store.ts` | the canvas resize all three zooming painters share, and the pixel budget the zoom stops at                                                                        |
-| `storage.ts`       | the three `localStorage` keys, every call guarded. Imports nothing                                                                                                |
+| `storage.ts`       | the four `localStorage` keys, every call guarded. Imports nothing                                                                                                 |
 | `publish.ts`       | the Export to levels/ panel: gate on `validateDocument`, then post the bundle                                                                                     |
 | `index.ts`         | the mode switch, Clear storage, and the keys and resizes each mode gets                                                                                           |
+| `hex.ts`           | hex as an author types and pastes it: `parseHexColor`, `parseHexColors`, `formatHexColors`. Pure                                                                   |
+| `color-palettes.ts` | `ColorPalette`, `ColorPaletteLibrary`, and the pure edits on them. Pure                                                                                           |
+| `color-palette-library.ts` | the `palettes` slice: what the editor opens on, and the write colours mode makes                                                                           |
+| `swatches.ts`      | the swatch list both colour panels draw, and the reader for a click on one                                                                                        |
+| `colors-mode.ts`   | the colours panel: the library, one picker, and the paste box                                                                                                     |
 
 `backing-store.ts` is left out of the diagram to keep it readable: it is a leaf under `canvas.ts` and `zoom.ts`, and under the two painters in `skin/` as well, which is the point of it — the pixel budget the zoom stops at and the resize that honours it are one number in one place.
 
@@ -488,11 +509,13 @@ The severities are a real line, not a mood: `error` means `parseStringToLevelSta
 
 ### Every change is autosaved
 
-The editor writes to `localStorage` on every edit and opens where it was left. Three keys — `sokoban.editor.level`, `sokoban.editor.skin` and `sokoban.editor.publish` — each written only by the one thing that owns that state, so no two of them ever coordinate a read-modify-write of one shared record.
+The editor writes to `localStorage` on every edit and opens where it was left. Four keys — `sokoban.editor.level`, `sokoban.editor.skin`, `sokoban.editor.publish` and `sokoban.editor.palettes` — each written only by the one thing that owns that state, so no two of them ever coordinate a read-modify-write of one shared record.
 
 Autosave hangs off each mode's `update()` — the call every edit already ends with — rather than being remembered at each of the dozen places that change something. Each slice holds the text it last stored and compares before writing, which keeps a redraw that changed nothing (a hover, a resize, a mode switch) from writing at all and makes the common case one string compare. No debounce: a level is a few kilobytes of XSB, cheap enough to store per painted cell.
 
 The `level` slice is the one both modes write, because both now edit the document — see "Both panels edit the level now". It lives in `autosave.ts` for that reason, and each mode calls it rather than keeping its own baseline.
+
+The `palettes` slice is the same arrangement one step further out: colours mode edits it and skin mode reads it, so it lives in `color-palette-library.ts` and is handed to both. It compares by identity rather than by text, like the skin's baseline does — every edit in `color-palettes.ts` returns the library it was given when it was a no-op, so identity is exact and a redraw that changed nothing costs a pointer compare.
 
 The undo stack does not persist. A reload is a new session, and the document is the work.
 
@@ -512,7 +535,7 @@ Nothing is migrated. A record without the current `version` is ignored and the e
 
 #### Clear storage resets the editor
 
-Clearing the keys without resetting the panels would be a lie, because the next edit autosaves and the state is back. So the button does both, behind a confirm, and `index.ts` owns it: clearing storage is not a level or a skin concern, which is why `EditorMode` has a `reset` for each mode to discard its own half. Each reset moves its "last stored" text along with it rather than writing, so storage stays empty until the next real edit. The level reset goes through `session.replace`, so it lands on the undo stack and Undo brings the level back.
+Clearing the keys without resetting the panels would be a lie, because the next edit autosaves and the state is back. So the button does both, behind a confirm, and `index.ts` owns it: clearing storage is not a level, a skin or a palette concern, which is why `EditorMode` has a `reset` for each mode to discard its own third. Each reset moves its "last stored" text along with it rather than writing, so storage stays empty until the next real edit. The level reset goes through `session.replace`, so it lands on the undo stack and Undo brings the level back.
 
 Writes are guarded rather than assumed: storage access throws outright in some embeddings, and a Safari private window accepts reads while refusing writes. A refusal is reported in the status line and the editor keeps working unsaved.
 
@@ -532,23 +555,45 @@ The level's name is stored under its own key rather than with the level, because
 it is the publish panel that owns it; clearing storage resets that box too, for
 the same reason it resets the panels.
 
+### Colour palettes are kept beside the level, not in it
+
+A palette is a named list of hexes an author keeps across a level — the inks a sprite set is drawn with, the ground it sits on, the ramp a tileset came from. Nothing in a level or a skin refers to one: it is a place to put colours so they can be copied back out, which is why it is its own mode and its own storage key rather than a field on either.
+
+That is also why palettes are not on the undo stack. The stack is the document's, and the document knows nothing about them, so deleting a palette asks first instead — the same deal Clear storage gets, for the same reason: the panel holds the only copy.
+
+"Palette" already meant the grid a tile sheet is cut into, in `skin/palette.ts`. The colour kind therefore says `colorPalette` in full everywhere — `ColorPalette`, `colors-mode.ts`, `#palette-swatches` against the older `#sheet-palette` — so neither ever reads as the other.
+
+#### Hex is widened on the way in, never on the way out
+
+`readHexColor` in `render/colors.ts` stays the one format the program stores: `#rrggbb` lowercase, because that is what a colour input and a canvas both take. But nobody types the `#`, palette sites hand out bare `1a1c2c`, and CSS is full of `#fff`, so `hex.ts` is the one widening — and it widens *into* `readHexColor` rather than around it, so every colour still leaves through the single gate.
+
+`parseHexColors` tokenises the pasted text rather than scanning it for hex-looking windows, because a token has to be a colour whole: `#ffffffaa` is a format this program does not have, and finding `#ffffff` inside it would silently drop the alpha instead of saying it could not be read. The cost is that a word spelled in hex letters is a colour; the box says "paste hex colours", and the count that comes back is how an author sees it happen.
+
+#### A colour field is never written to while it is focused
+
+The ink, the ground and the palette picker are each two controls over one value — a swatch and a hex field — and both have to follow the other. The trap is the redraw: typing `#1a1c2c` passes through `1a1`, which is a valid shorthand, so the live edit commits `#11aa11` and the redraw would write that back over the three characters typed so far. So every write-back is guarded on `document.activeElement`, and the field is squared up with the value it is editing on `change`, when the author has left it.
+
+The ground's live edits coalesce into one undo entry per visit, from either control — `isEditingGround` is opened by the first edit and closed by the picker's `change` or the field's. Without it, typing a hex would push one undo entry per keystroke that happened to parse.
+
 ## `editor/skin/` — binds sprites to roles, exports an atlas
 
 Skin mode shares the level document with level mode: the level being drawn is the live preview, which is the only honest way to tell whether a skin reads.
 
 ```
-render/tile-roles.ts   ROLE_ORDER, TileRole        pure leaves, no imports
-render/sheet.ts        the tile grid                 — shared with the game
-editor/tint.ts         Tint, the ink vocabulary      — editor-only, see below
-        ↑
-     skin.ts ← atlas.ts ← tinted-tiles.ts          pure (the last two use a canvas)
-   ↑  ↑   ↑        ↑            ↑
-   │  │ custom-tiles.ts   palette-layout.ts        pure
-   │  │    ↑              ↑
-roles.ts   │             │                         pure
-   ↑       │             │
-palette.ts │ preview.ts  │                         draw
-      └────┴──────┴──────┴→ skin-mode.ts           the only DOM
+
+render/tile-roles.ts ROLE_ORDER, TileRole pure leaves, no imports
+render/sheet.ts the tile grid — shared with the game
+editor/tint.ts Tint, the ink vocabulary — editor-only, see below
+↑
+skin.ts ← atlas.ts ← tinted-tiles.ts pure (the last two use a canvas)
+↑ ↑ ↑ ↑ ↑
+│ │ custom-tiles.ts palette-layout.ts pure
+│ │ ↑ ↑
+roles.ts │ │ pure
+↑ │ │
+palette.ts │ preview.ts │ draw
+└────┴──────┴──────┴→ skin-mode.ts the only DOM
+
 ```
 
 ### A skin binds roles, not cells
@@ -607,10 +652,15 @@ A piece is named for where it sits in the wall **around** the floor. Floor to th
 Four will not do, and the reason is the shape the pieces exist for:
 
 ```
-#####     The corners of a one-cell-thick border have no
-#   #     orthogonally adjacent floor — only diagonal. Four
-#   #     neighbours cannot tell a corner from a buried block.
+
+##### The corners of a one-cell-thick border have no
+
+# # orthogonally adjacent floor — only diagonal. Four
+
+# # neighbours cannot tell a corner from a buried block.
+
 #####
+
 ```
 
 So `getWallRole` takes a `WallNeighbourhood` of eight booleans and resolves in that order of specificity: one open side is an edge, no open side but an open diagonal is a corner, nothing open at all is the fill.
@@ -624,11 +674,13 @@ The classifier lives in `render/` rather than the editor so the preview and the 
 ### Layer order, and what it asks of the art
 
 ```
-floor   → every cell of the board, walls included
-wall    → over floor
-goal    → over floor
-object  → box / boxOnGoal / player, over both
-```
+
+floor → every cell of the board, walls included
+wall → over floor
+goal → over floor
+object → box / boxOnGoal / player, over both
+
+````
 
 Floor is one layer under the whole board rather than a tile that the others replace, so every other tile can be a transparent overlay _or_ an opaque tile of its own without the author having to redraw floor into it. What falls out is the one authoring rule: floor opaque, everything else free to use transparency.
 
@@ -668,7 +720,7 @@ Re-slicing drops every binding. A tile index only means something against one gr
   "pixelated": true,
   "roles": ["floor", "goal", "wall", "box", "boxOnGoal", "player"]
 }
-```
+````
 
 One row, `roles[n]` in column `n`, listing exactly the roles the image contains — an unbound role takes no column. Naming them in the file is what lets a six-tile skin and a fourteen-tile skin share one format with no version field, and what lets the set grow — more wall pieces, ice, conveyors — by appending to `ROLE_ORDER` and widening the image, with no breakage for skins already exported, because every skin describes itself.
 
@@ -686,12 +738,13 @@ Packing also ships only what the skin uses, so a skin cut from a 500-tile sheet 
 - `core/` imports nothing from `host/`, `render/` or `editor/`, so it runs unchanged in Node tests, a terminal front end, or a solver.
 - `editor/` imports nothing from `host/`, and `host/` imports nothing from `editor/`. The two front ends meet only in `core/`, in `render/`, and in `levels/` on disk.
 - `render/colors.ts` and `render/tile-roles.ts` are leaves that import nothing; `render/sheet.ts` and `render/skin.ts` import only each other and those leaves. They exist so the level you draw looks like the level you play, and so the editor and the game agree on what a role is and how a sheet is cut, without the editor depending on the game's renderer.
-- The DOM lives only in `host/index.ts`, `editor/index.ts`, `editor/level-mode.ts`, `editor/skin-mode.ts` and `editor/publish.ts`. Everything under `editor/skin/` is pure or draws into a canvas it was handed — `atlas.ts` and `tinted-tiles.ts` create one, which is why `editor/tint.ts` holds the tint vocabulary separately: `document.ts` needs the type and must stay free of the DOM, exactly as it takes `CustomTileMode` from `render/custom-tiles.ts`.
+- The DOM lives only in `host/index.ts`, `editor/index.ts`, `editor/level-mode.ts`, `editor/skin-mode.ts`, `editor/colors-mode.ts`, `editor/swatches.ts` and `editor/publish.ts`. Everything under `editor/skin/` is pure or draws into a canvas it was handed — `atlas.ts` and `tinted-tiles.ts` create one, which is why `editor/tint.ts` holds the tint vocabulary separately: `document.ts` needs the type and must stay free of the DOM, exactly as it takes `CustomTileMode` from `render/custom-tiles.ts`.
 - `localStorage` lives only in `editor/storage.ts`, which holds the keys and swallows the browser's failure modes. What goes in them is `editor/stored-state.ts`, which is pure and tested; the game stores nothing.
 - The file system lives only in `tools/level-export-plugin.ts`, which runs in the dev server and never in a browser or a build. It is also the only place a path is built from user input, which is why it derives the slug itself.
 - `tools/` may import `src/core/`, and nothing else may import `tools/`.
-- `editor/index.ts` is a mode switch and nothing else: it owns which panel is visible, routes keys and resizes to it, and builds the two things neither panel owns — the level autosave and the publish panel.
-- A skin binds a role; a custom tile names a cell. The first lives in `SkinDraft`, the second on `EditorDocument`, and no module holds both.
+- `editor/index.ts` is a mode switch and nothing else: it owns which panel is visible, routes keys and resizes to it, and builds the three things no single panel owns — the level autosave, the palette library and the publish panel.
+- A skin binds a role; a custom tile names a cell; a colour palette names neither. The first lives in `SkinDraft`, the second on `EditorDocument`, the third in `ColorPaletteLibrary`, and no module holds two of them.
+- `editor/swatches.ts` is the one DOM module that is not a panel: it builds a list of colours and reads a click back off it, and knows nothing about what an action means. Both colour panels draw the same row and style it differently, which is the part worth sharing.
 
 ## Tests
 
@@ -714,7 +767,11 @@ Vitest is pinned to 2.x because 3+ requires Vite 6, and this project is on Vite 
 
 The suite is checked against deliberate regressions, not just written: dropping the bounds check in `getNextPosition`, ignoring what is behind a pushed box, replacing the flood fill with the raw open map, making `isSolved` vacuous, and letting undo run past the start each fail at least one test.
 
-The editor's pure modules are tested the same way, with XSB as the language in both directions — `parseXsbToDocument` in, `formatDocumentAsXsb` out, so a brush test is two boards. The custom tiles are the exception, because XSB cannot spell them: those assertions read the map. `layout.ts`, `canvas.ts` and `zoom.ts` are untested: the first is the arithmetic the pointer handler and the renderer share — a few lines, and `palette-layout.test.ts` covers the same shape for the sheet — the second is drawing, and the third is two buttons and a scroll offset.
+The editor's pure modules are tested the same way, with XSB as the language in both directions — `parseXsbToDocument` in, `formatDocumentAsXsb` out, so a brush test is two boards. The custom tiles are the exception, because XSB cannot spell them: those assertions read the map.
+
+`color-palettes.test.ts` leans on the identity contract as much as on the values — `toBe`, not `toEqual`, wherever an edit should have been a no-op, because that is what every panel's "redraw only on a real change" rests on. `hex.test.ts` asserts the widening in both directions, including the two things it must _not_ read: a format the program does not have (`#ffffffaa`) and a function call that is full of hex digits (`rgb(26, 28, 44)`).
+
+`layout.ts`, `canvas.ts` and `zoom.ts` are untested: the first is the arithmetic the pointer handler and the renderer share — a few lines, and `palette-layout.test.ts` covers the same shape for the sheet — the second is drawing, and the third is two buttons and a scroll offset.
 
 `render/skin.test.ts` covers the seam between the editor's output and the game's input: that a manifest resolves to the columns the atlas was packed with, that an unbound wall piece falls back to the wall fill, that an unrecognised role still consumes its column, and that a column past the ones `roles` names still cuts. The atlas it tests against is two numbers, because its size is all a skin reads off the image.
 

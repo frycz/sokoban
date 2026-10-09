@@ -73,6 +73,26 @@ export function readDataUrlAsImageBitmap(
   })
 }
 
+/**
+ * A hex onto the system clipboard, so it can be pasted into the other panel's
+ * colour field — or out of the editor entirely, into the art program the sheet
+ * came from, which is half of what a palette is for.
+ *
+ * Returns whether it landed rather than throwing: the clipboard is refused in
+ * an insecure context and in a window that has not been interacted with, and
+ * the panel says so in its status line while staying usable — the hex is on
+ * screen to read either way.
+ */
+export async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')

@@ -255,6 +255,134 @@
       #ground .clear:hover:enabled {
         color: #e07a7a;
       }
+      /* A colour's hex is there to be read and copied, so it is spelled out
+         next to the chip rather than left to a tooltip. */
+      .swatches {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      /* Colours mode has the room for columns, and a palette is read as a
+         block; the skin sidebar gets the same rows in one column. */
+      #palette-swatches {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        align-content: start;
+        gap: 4px;
+      }
+      /* The panel is about colour, so here the colour is the thing and the hex
+         is the caption. The skin sidebar keeps the small chip: there the hex is
+         what is wanted and the colour only has to be recognisable. */
+      #palette-swatches .chip {
+        width: 40px;
+        height: 26px;
+      }
+      .swatch-row {
+        display: flex;
+        gap: 4px;
+        min-width: 0;
+      }
+      .swatch-row > button.swatch {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        text-align: left;
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .swatch-row .chip {
+        display: block;
+        width: 18px;
+        height: 18px;
+        flex: 0 0 auto;
+        border: 1px solid #2c3444;
+        border-radius: 2px;
+      }
+      .swatch-row .hex {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .swatch-action {
+        flex: 0 0 auto;
+        padding: 5px 8px;
+        color: #7d8699;
+      }
+      .swatch-action:hover {
+        color: #e8edf7;
+      }
+      .swatch-empty {
+        margin: 0;
+        color: #7d8699;
+      }
+      /* A hex field is six digits and a hash, so it does not need to grow the
+         way a name field does. */
+      input.hex {
+        flex: 0 1 8em;
+      }
+      #palette-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      #palette-list .palette-row > button {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        text-align: left;
+        width: 100%;
+        min-width: 0;
+      }
+      #palette-list .name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      /* The first few colours, so a palette is recognisable before it is
+         opened — pushed right, because the name is what is read first. */
+      #palette-list .strip {
+        display: flex;
+        gap: 2px;
+        margin-left: auto;
+        flex: 0 0 auto;
+      }
+      #palette-list .strip .chip {
+        display: block;
+        width: 9px;
+        height: 14px;
+        border-radius: 1px;
+      }
+      #palette-list .count {
+        flex: 0 0 auto;
+        color: #7d8699;
+        font-size: 12px;
+      }
+      /* Deleting a palette cannot be undone — the stack is the document's — so
+         the control reads as the destructive one it is. */
+      #colors-mode .clear {
+        flex: 0 0 auto;
+        padding: 5px 8px;
+        color: #7d8699;
+      }
+      #colors-mode .clear:hover:enabled {
+        color: #e07a7a;
+      }
+      #skin-palette {
+        font: inherit;
+        color: inherit;
+        width: 100%;
+        background: #1d2230;
+        border: 1px solid #2c3444;
+        border-radius: 4px;
+        padding: 4px 6px;
+      }
+      #skin-palette-report:empty {
+        display: none;
+      }
       #role-list {
         display: flex;
         flex-direction: column;
@@ -325,6 +453,7 @@
     <div class="row modes">
       <button type="button" id="mode-level">Level</button>
       <button type="button" id="mode-skin">Skin</button>
+      <button type="button" id="mode-colors">Colours</button>
       <span class="publish">
         <input id="level-name" type="text" placeholder="level name" />
         <button type="button" id="publish">Export to levels/</button>
@@ -514,6 +643,22 @@
         <div class="row" id="ink">
           <label for="ink-color">ink</label>
           <input id="ink-color" type="color" value="#ffffff" />
+          <input
+            id="ink-hex"
+            class="hex"
+            type="text"
+            spellcheck="false"
+            placeholder="#rrggbb"
+            aria-label="ink hex"
+          />
+          <button
+            type="button"
+            class="swatch-action"
+            id="ink-copy"
+            title="Copy the ink hex"
+          >
+            ⧉
+          </button>
           <button
             type="button"
             data-ink-mode="multiply"
@@ -532,7 +677,22 @@
         <div class="row" id="ground">
           <label for="ground-color">ground</label>
           <input id="ground-color" type="color" value="#000000" />
-          <span class="state" id="ground-state">none</span>
+          <input
+            id="ground-hex"
+            class="hex"
+            type="text"
+            spellcheck="false"
+            placeholder="none"
+            aria-label="ground hex"
+          />
+          <button
+            type="button"
+            class="swatch-action"
+            id="ground-copy"
+            title="Copy the ground hex"
+          >
+            ⧉
+          </button>
           <button
             type="button"
             class="clear"
@@ -542,6 +702,11 @@
             ×
           </button>
         </div>
+
+        <h2>Colour palette</h2>
+        <div class="report" id="skin-palette-report"></div>
+        <select id="skin-palette" aria-label="colour palette"></select>
+        <div class="swatches" id="skin-palette-swatches"></div>
 
         <h2>Roles</h2>
         <div class="report" id="skin-report"></div>
@@ -555,6 +720,95 @@
         <div class="row">
           <button type="button" id="export-atlas">atlas.png</button>
           <button type="button" id="export-manifest">skin.json</button>
+        </div>
+      </aside>
+    </section>
+
+    <section class="mode" id="colors-mode" hidden>
+      <main>
+        <div class="row" id="palette-name-row">
+          <label for="palette-name">palette</label>
+          <input
+            id="palette-name"
+            type="text"
+            placeholder="palette name"
+            aria-label="palette name"
+          />
+          <button
+            type="button"
+            class="clear"
+            id="palette-delete"
+            title="Delete this palette — palettes are not on the undo stack"
+          >
+            ×
+          </button>
+        </div>
+        <div class="swatches" id="palette-swatches"></div>
+        <div class="row" id="color-controls">
+          <label for="color-picker">colour</label>
+          <input id="color-picker" type="color" value="#ffffff" />
+          <input
+            id="color-hex"
+            class="hex"
+            type="text"
+            spellcheck="false"
+            placeholder="#rrggbb"
+            aria-label="colour hex"
+          />
+          <button type="button" id="color-add" title="Add it to this palette">
+            add
+          </button>
+          <button
+            type="button"
+            id="color-replace"
+            title="Make the selected swatch this colour, keeping its place"
+          >
+            replace
+          </button>
+          <button
+            type="button"
+            id="colors-copy"
+            title="Copy every hex in this palette, one per line"
+          >
+            copy all
+          </button>
+        </div>
+      </main>
+      <aside>
+        <h2>Palettes</h2>
+        <div class="report" id="colors-report"></div>
+        <div class="row">
+          <input
+            id="new-palette-name"
+            type="text"
+            placeholder="new palette name"
+            aria-label="new palette name"
+          />
+          <button type="button" id="palette-new">New</button>
+        </div>
+        <div id="palette-list"></div>
+
+        <h2>Hex</h2>
+        <textarea
+          id="palette-paste"
+          spellcheck="false"
+          placeholder="Paste hex colours here — #1a1c2c, 5d275d, one per line, a CSS block, anything"
+        ></textarea>
+        <div class="row">
+          <button
+            type="button"
+            id="palette-paste-add"
+            title="Read every hex in the box into this palette, skipping the ones it already has"
+          >
+            Add to palette
+          </button>
+          <button
+            type="button"
+            id="palette-paste-fill"
+            title="Write this palette's hexes into the box, to select by hand"
+          >
+            Write hexes
+          </button>
         </div>
       </aside>
     </section>
