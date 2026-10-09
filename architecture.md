@@ -15,10 +15,11 @@ src/render/     canvas.ts, colors.ts, tile-roles.ts,    (state) => draw
 src/editor/     document.ts, xsb.ts, validate.ts,       level mode, same pure/shell/draw split
                 session.ts, layout.ts, canvas.ts,       plus autosave:
                 level-mode.ts, dom.ts, zoom.ts,         stored-state.ts, autosave.ts,
-                index.ts, publish.ts                    storage.ts — and the export to levels/
+                index.ts, publish.ts, tint.ts           storage.ts — and the export to levels/
 src/editor/skin/ skin.ts, roles.ts, atlas.ts,           skin mode
                  custom-tiles.ts, palette.ts,
-                 palette-layout.ts, preview.ts
+                 palette-layout.ts, preview.ts,
+                 tinted-tiles.ts
 tools/          level-export-plugin.ts                  the dev-server endpoint publish.ts posts to
 ```
 
@@ -485,9 +486,10 @@ Skin mode shares the level document with level mode: the level being drawn is th
 ```
 render/tile-roles.ts   ROLE_ORDER, TileRole        pure leaves, no imports
 render/sheet.ts        the tile grid                 — shared with the game
+editor/tint.ts         Tint, the ink vocabulary      — editor-only, see below
         ↑
-     skin.ts ← atlas.ts                            pure (atlas.ts packs on a canvas)
-   ↑  ↑   ↑        ↑
+     skin.ts ← atlas.ts ← tinted-tiles.ts          pure (the last two use a canvas)
+   ↑  ↑   ↑        ↑            ↑
    │  │ custom-tiles.ts   palette-layout.ts        pure
    │  │    ↑              ↑
 roles.ts   │             │                         pure
@@ -502,7 +504,38 @@ The game renderer resolves a sprite from state — it never sees a cell's identi
 
 Because a level need not contain every role — there is nothing to click if it has no goals — the role list in the sidebar is a second drop target for the same action. The palette selection is the brush; the preview and the role list are both places to apply it.
 
-The **place tile**, **erase tile** and **swap mode** tools are the way out of that: one cell, one tile, over or instead of whatever the skin decided. That is per-cell art, which is level data rather than skin data, and it lives on the document — see "Custom tiles are the level's, not the skin's".
+The **place tile**, **erase tile**, **swap mode** and **recolor** tools are the way out of that: one cell, one tile, over or instead of whatever the skin decided. That is per-cell art, which is level data rather than skin data, and it lives on the document — see "Custom tiles are the level's, not the skin's".
+
+### Colour is the author's, and it is baked into the atlas
+
+A monochrome tile sheet has no colour in it to adjust — `levels/monochrome/skin.png` is literally two values, `#f9fafb` and transparent — so the colour is not an adjustment to the art, it is a thing the author has to say. A **tint** is that: a colour and a mode, picked in the sidebar as the **ink** the next bind or placement is made with.
+
+**One operation, not two.** `multiply` keeps the art's own shading and darkens it toward the colour; `flat` keeps nothing but the tile's alpha and repaints every pixel it has. That covers both halves of the question with one control, because the two modes fail in opposite directions:
+
+| source                | multiply by white | multiply by C   | flat C                       |
+| --------------------- | ----------------- | --------------- | ---------------------------- |
+| a stencil (white ink) | unchanged         | **≈ C**         | **exactly C**                |
+| multicoloured art     | **unchanged**     | shaded toward C | repainted flat, shading lost |
+
+Multiplying by white is the no-op, which is why "no tint" is a value rather than an absence: nothing has an optional field to branch on, and a tile never tinted is the same tile as one tinted back to white. Multiply can only ever darken — `flat` is there because that is a real limit, not because a stencil could not be done with multiply. For a tile whose ink is already white the two are indistinguishable, which is exactly why the author picks rather than the editor inferring, the same argument `onTop` / `overwrite` is made on.
+
+Hue and saturation sliders, and palette remapping, are deliberately absent: on multicoloured art they are numbers you cannot predict per tile, and the stencil case — the one that actually prompted this — does not need them.
+
+**The game never learns what colour is.** `tintSheetTile` is applied when the atlas is packed, so a tint ships as pixels. `skin.json` and `tiles.json` are byte for byte what an untinted skin writes, `render/` stays `(state) => draw` with no tint cache and no per-frame compositing, and there is no colour for a bundle's loader to validate. What it costs is that a column is a tile _and_ an ink, so one sprite placed in two inks is two atlas columns — bounded by the number of distinct inks, which is small for hand-placed art and zero for role bindings, since those get a column each regardless. It also means an exported atlas cannot be re-tinted, and nothing can tint at runtime; the editor is the authoring tool and holds the draft in autosave, so re-exporting is the undo, and no runtime effect wants this today.
+
+`tintSheetTile` returns a tile of its own rather than tinting at the draw call, because the export has to extrude the tinted _edges_ and the preview has to scale them — both need the finished pixels in isolation, with no neighbour in the sheet to sample. Every path goes through it, the identity tint included, so the preview, the sidebar thumbnails and the exported atlas cannot be different pixels; `createTintedTileCache` is what makes that affordable, since the preview repaints the whole board on every pointer move.
+
+A blend mode still composites source-over, so filling an opaque colour over a `multiply` would paint the tile's _transparent_ pixels too — turning a stencil into a block. So multiply fills and then takes the alpha back off the tile itself with `destination-in`, which is why the source is drawn twice. `flat` needs only `source-in`, which keeps the destination's alpha and takes the source's colour.
+
+#### Where a tint lives: two homes, because they answer different questions
+
+`SkinDraft.tints` is a second map beside `bindings` rather than a field on one, because the two are invalidated by different things. A tile index only means something against one grid, so re-slicing drops every binding; a colour means the same against any grid, so `clearBindings` leaves the palette alone and rebinding comes back to the colours already chosen. An ink also outlives `unbindRole` — it is the author's choice for that role, not a property of whatever tile happened to be there.
+
+A `CustomTile`'s tint, by contrast, is a field on the placement, because there it genuinely is per cell: two cells can hold the same sprite in different colours, exactly as they can hold it in different modes. Two parallel maps would have to be kept in step through a resize and an erase for no gain.
+
+Neither moved `STORED_VERSION`. A record written before tints existed has none, and no tint reads as the identity, so the field's absence already means what the old record meant — the same reason adding the mode did not move it either.
+
+**recolor** is its own tool, like **swap mode** and for the same reason: re-stamping a cell to change its ink would need the original tile still selected and would quietly replace the art if it were not. Unlike swapping it is idempotent, so it can be dragged across a row without flickering.
 
 ### Fourteen roles: six required, eight optional
 
@@ -566,7 +599,7 @@ A zoom is a view setting rather than data: none of the three is stored with the 
 
 `SheetSettings` is `tileWidth`, `tileHeight`, `margin`, `spacing` — enough to slice essentially any tileset. The exported atlas is described with the same four numbers, and the game cuts our output with the identical arithmetic because it is the identical module: `render/sheet.ts`, which both sides import.
 
-Re-slicing drops every binding. A tile index only means something against one grid, so keeping indices that now point at different art would be silently wrong; `clearBindings` is the honest answer.
+Re-slicing drops every binding. A tile index only means something against one grid, so keeping indices that now point at different art would be silently wrong; `clearBindings` is the honest answer. It keeps the tints, for the mirror-image reason — see "Where a tint lives".
 
 ### The manifest's role list is data, not a convention
 
@@ -598,7 +631,7 @@ Packing also ships only what the skin uses, so a skin cut from a 500-tile sheet 
 - `core/` imports nothing from `host/`, `render/` or `editor/`, so it runs unchanged in Node tests, a terminal front end, or a solver.
 - `editor/` imports nothing from `host/`, and `host/` imports nothing from `editor/`. The two front ends meet only in `core/`, in `render/`, and in `levels/` on disk.
 - `render/colors.ts` and `render/tile-roles.ts` are leaves that import nothing; `render/sheet.ts` and `render/skin.ts` import only each other and those leaves. They exist so the level you draw looks like the level you play, and so the editor and the game agree on what a role is and how a sheet is cut, without the editor depending on the game's renderer.
-- The DOM lives only in `host/index.ts`, `editor/index.ts`, `editor/level-mode.ts`, `editor/skin-mode.ts` and `editor/publish.ts`. Everything under `editor/skin/` is pure or draws into a canvas it was handed.
+- The DOM lives only in `host/index.ts`, `editor/index.ts`, `editor/level-mode.ts`, `editor/skin-mode.ts` and `editor/publish.ts`. Everything under `editor/skin/` is pure or draws into a canvas it was handed — `atlas.ts` and `tinted-tiles.ts` create one, which is why `editor/tint.ts` holds the tint vocabulary separately: `document.ts` needs the type and must stay free of the DOM, exactly as it takes `CustomTileMode` from `render/custom-tiles.ts`.
 - `localStorage` lives only in `editor/storage.ts`, which holds the keys and swallows the browser's failure modes. What goes in them is `editor/stored-state.ts`, which is pure and tested; the game stores nothing.
 - The file system lives only in `tools/level-export-plugin.ts`, which runs in the dev server and never in a browser or a build. It is also the only place a path is built from user input, which is why it derives the slug itself.
 - `tools/` may import `src/core/`, and nothing else may import `tools/`.

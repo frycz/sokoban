@@ -16,6 +16,7 @@ import { decodeStoredSkin, encodeStoredSkin } from './stored-state'
 import { getAtlasSize, packSkinAtlas } from './skin/atlas'
 import {
   countOverwrites,
+  countTinted,
   formatCustomTilesFile,
   packCustomTiles,
   type CustomTilePacking,
@@ -35,11 +36,14 @@ import {
   getMissingRequiredRoles,
   isRoleBound,
   isSkinComplete,
+  setRoleTint,
   setSheetSettings,
   toSkinFileName,
   unbindRole,
   type SkinDraft,
 } from './skin/skin'
+import { NO_TINT, readTint, type Tint } from './tint'
+import { createTintedTileCache } from './skin/tinted-tiles'
 
 const THUMBNAIL_SIZE = 24
 
@@ -76,18 +80,20 @@ const ROLE_GROUPS: readonly {
  * every wall changes at once — and the other three are the escape hatch from
  * it: one cell, one tile, whatever the skin would have drawn there.
  *
- * `swap` is how the on-top / overwrite choice is changed after the fact. It
- * exists as its own tool rather than being folded into `place` because
- * re-stamping a cell to change its mode would need the original tile still
- * selected, and would quietly replace the art if it were not.
+ * `swap` is how the on-top / overwrite choice is changed after the fact, and
+ * `recolor` is how the ink is. Both exist as their own tools rather than being
+ * folded into `place` because re-stamping a cell to change one of them would
+ * need the original tile still selected, and would quietly replace the art if
+ * it were not.
  */
-type PreviewTool = 'bind' | 'place' | 'erase' | 'swap'
+type PreviewTool = 'bind' | 'place' | 'erase' | 'swap' | 'recolor'
 
 const TOOL_OF_KEY: Record<string, PreviewTool | undefined> = {
   '1': 'bind',
   '2': 'place',
   '3': 'erase',
   '4': 'swap',
+  '5': 'recolor',
 }
 
 /**
@@ -128,9 +134,12 @@ export function createSkinMode(
     requireElement<HTMLInputElement>('#show-custom-tiles')
   const report = requireElement<HTMLElement>('#skin-report')
   const roleList = requireElement<HTMLElement>('#role-list')
+  const inkControls = requireElement<HTMLElement>('#ink')
+  const inkColorInput = requireElement<HTMLInputElement>('#ink-color')
   const atlasButton = requireElement<HTMLButtonElement>('#export-atlas')
   const manifestButton = requireElement<HTMLButtonElement>('#export-manifest')
 
+  const getTintedTile = createTintedTileCache()
   const paintPalette = createPalettePainter(paletteView, paletteCanvas)
   const paintPreview = createSkinPreviewPainter(previewView, previewCanvas)
 
@@ -147,6 +156,10 @@ export function createSkinMode(
   // affects the next placement and never one already made — those are the swap
   // tool's job.
   let placeMode: CustomTileMode = 'onTop'
+  // The ink the next bind or placement is made with. View state like the brush
+  // and the place mode: what it writes is kept — on the draft for a role, on the
+  // cell for a placement — so the picker itself has nothing to remember.
+  let ink: Tint = NO_TINT
   let showSkinTiles = true
   let showCustomTiles = true
   let hoverPosition = -1
@@ -255,6 +268,39 @@ export function createSkinMode(
     )
   }
 
+  /**
+   * A canvas rather than the sheet behind a `background-position`, because a
+   * thumbnail now has to show the role's ink and the one honest way to do that
+   * is the same `tintSheetTile` the preview and the export go through. Fitted
+   * rather than stretched, so a non-square tile keeps its shape.
+   */
+  function drawThumbnail(
+    canvas: HTMLCanvasElement,
+    tile: HTMLCanvasElement,
+  ): void {
+    const context = canvas.getContext('2d')
+
+    if (!context) {
+      return
+    }
+
+    const scale = Math.min(
+      THUMBNAIL_SIZE / tile.width,
+      THUMBNAIL_SIZE / tile.height,
+    )
+    const width = Math.max(1, Math.round(tile.width * scale))
+    const height = Math.max(1, Math.round(tile.height * scale))
+
+    context.imageSmoothingEnabled = !draft.isPixelated
+    context.drawImage(
+      tile,
+      Math.round((THUMBNAIL_SIZE - width) / 2),
+      Math.round((THUMBNAIL_SIZE - height) / 2),
+      width,
+      height,
+    )
+  }
+
   function renderRoleList(): void {
     const grid = sheetImage
       ? getSheetGrid(draft.sheet, sheetImage.width, sheetImage.height)
@@ -277,17 +323,19 @@ export function createSkinMode(
         button.type = 'button'
         button.dataset.role = role
 
-        const thumbnail = document.createElement('span')
+        const thumbnail = document.createElement('canvas')
         thumbnail.className = 'tile'
+        thumbnail.width = THUMBNAIL_SIZE
+        thumbnail.height = THUMBNAIL_SIZE
 
-        if (sheetImage && sheetDataUrl && grid && tileIndex !== UNBOUND) {
+        if (sheetImage && grid && tileIndex !== UNBOUND) {
           const rect = getSourceTileRect(draft.sheet, grid, tileIndex)
 
           if (rect.width > 0) {
-            const scale = THUMBNAIL_SIZE / rect.width
-            thumbnail.style.backgroundImage = `url("${sheetDataUrl}")`
-            thumbnail.style.backgroundSize = `${sheetImage.width * scale}px ${sheetImage.height * scale}px`
-            thumbnail.style.backgroundPosition = `${-rect.x * scale}px ${-rect.y * scale}px`
+            drawThumbnail(
+              thumbnail,
+              getTintedTile(sheetImage, rect, draft.tints[role]),
+            )
           }
         }
 
@@ -302,6 +350,20 @@ export function createSkinMode(
         row.append(button)
 
         if (isRoleBound(draft, role)) {
+          // The glyph says the mode and its colour says the colour, so the row
+          // reads its own ink at a glance — white and round is no ink, which is
+          // what most rows are. Only on a bound role: an ink with no tile to
+          // paint is nothing to click.
+          const roleTint = draft.tints[role]
+          const applyInk = document.createElement('button')
+          applyInk.type = 'button'
+          applyInk.className = 'ink'
+          applyInk.dataset.ink = role
+          applyInk.title = `Paint ${ROLE_LABELS[role]} with the current ink`
+          applyInk.style.color = roleTint.color
+          applyInk.textContent = roleTint.mode === 'flat' ? '◆' : '●'
+          row.append(applyInk)
+
           const clear = document.createElement('button')
           clear.type = 'button'
           clear.className = 'clear'
@@ -360,17 +422,18 @@ export function createSkinMode(
     }
 
     if (placed === 0) {
-      if (previewTool === 'swap') {
-        setMessage('No custom tiles to swap yet.', 'warning')
+      if (previewTool === 'swap' || previewTool === 'recolor') {
+        setMessage('No custom tiles to change yet.', 'warning')
       }
 
       return
     }
 
     const overwrites = countOverwrites(customTiles)
+    const tinted = countTinted(customTiles)
 
     setMessage(
-      `${placed} custom ${placed === 1 ? 'tile' : 'tiles'} placed, ${overwrites} overwriting the skin${showCustomTiles ? '' : ' — hidden'}.`,
+      `${placed} custom ${placed === 1 ? 'tile' : 'tiles'} placed, ${overwrites} overwriting the skin${tinted > 0 ? `, ${tinted} inked` : ''}${showCustomTiles ? '' : ' — hidden'}.`,
       showCustomTiles ? 'ok' : 'warning',
     )
   }
@@ -389,6 +452,15 @@ export function createSkinMode(
       button.setAttribute(
         'aria-pressed',
         String(button.getAttribute('data-place-mode') === placeMode),
+      )
+    }
+
+    for (const button of inkControls.querySelectorAll(
+      'button[data-ink-mode]',
+    )) {
+      button.setAttribute(
+        'aria-pressed',
+        String(button.getAttribute('data-ink-mode') === ink.mode),
       )
     }
   }
@@ -439,12 +511,17 @@ export function createSkinMode(
     manifestButton.disabled = !canExport
   }
 
+  /**
+   * Binding is one gesture that sets both halves of a column — the tile and the
+   * ink it ships in — because that is what the author just chose in the sidebar.
+   * The per-row ink button is how the colour is changed without the tile.
+   */
   function assign(role: TileRole): void {
     if (!sheetImage || selectedTileIndex === UNBOUND) {
       return
     }
 
-    draft = bindRole(draft, role, selectedTileIndex)
+    draft = setRoleTint(bindRole(draft, role, selectedTileIndex), role, ink)
     update()
   }
 
@@ -503,6 +580,8 @@ export function createSkinMode(
     previewZoom.reset()
     previewTool = 'bind'
     placeMode = 'onTop'
+    ink = NO_TINT
+    inkColorInput.value = ink.color
     showSkinTiles = true
     showCustomTiles = true
     showSkinTilesInput.checked = true
@@ -658,7 +737,11 @@ export function createSkinMode(
       return session.swapCustomTileMode(position)
     }
 
-    return session.placeCustomTile(position, selectedTileIndex, placeMode)
+    if (previewTool === 'recolor') {
+      return session.recolorCustomTile(position, ink)
+    }
+
+    return session.placeCustomTile(position, selectedTileIndex, placeMode, ink)
   }
 
   function selectTool(tool: PreviewTool): void {
@@ -751,6 +834,28 @@ export function createSkinMode(
     }
   })
 
+  /**
+   * The one control whose value nothing on screen is drawn from: a role row
+   * shows its *own* ink, not the current one, so changing the picker repaints
+   * nothing until it is applied. Which is just as well — a colour input fires
+   * `input` continuously while it is dragged, and `update()` rebuilds fourteen
+   * role rows.
+   */
+  inkColorInput.addEventListener('input', () => {
+    ink = readTint({ color: inkColorInput.value, mode: ink.mode })
+  })
+
+  inkControls.addEventListener('click', (event) => {
+    const mode = (event.target as Element)
+      .closest('button[data-ink-mode]')
+      ?.getAttribute('data-ink-mode')
+
+    if (mode) {
+      ink = readTint({ color: ink.color, mode })
+      update()
+    }
+  })
+
   showSkinTilesInput.addEventListener('change', () => {
     showSkinTiles = showSkinTilesInput.checked
     update()
@@ -769,6 +874,15 @@ export function createSkinMode(
 
     if (cleared) {
       draft = unbindRole(draft, cleared as TileRole)
+      update()
+
+      return
+    }
+
+    const inked = target.closest('button[data-ink]')?.getAttribute('data-ink')
+
+    if (inked) {
+      draft = setRoleTint(draft, inked as TileRole, ink)
       update()
 
       return
@@ -802,7 +916,7 @@ export function createSkinMode(
     const canvas = packSkinAtlas(
       draft,
       sheetImage,
-      getCustomTilePacking(sheetImage).sheetTileIndices,
+      getCustomTilePacking(sheetImage).columns,
     )
     canvas.toBlob((blob) => {
       if (blob) {
@@ -813,7 +927,7 @@ export function createSkinMode(
 
   manifestButton.addEventListener('click', () => {
     const customColumns = sheetImage
-      ? getCustomTilePacking(sheetImage).sheetTileIndices.length
+      ? getCustomTilePacking(sheetImage).columns.length
       : 0
     const size = getAtlasSize(draft, customColumns)
     downloadBlob(
@@ -844,11 +958,9 @@ export function createSkinMode(
 
     return {
       manifest: formatSkinManifest(draft),
-      atlasDataUrl: packSkinAtlas(
-        draft,
-        sheetImage,
-        packing.sheetTileIndices,
-      ).toDataURL('image/png'),
+      atlasDataUrl: packSkinAtlas(draft, sheetImage, packing.columns).toDataURL(
+        'image/png',
+      ),
       customTiles:
         packing.placementOfPosition.size === 0
           ? null

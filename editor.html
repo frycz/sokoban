@@ -199,6 +199,17 @@
         border-radius: 4px;
         padding: 4px 6px;
       }
+      /* The picker is a swatch, so it gets no padding of its own — what it
+         shows is the colour, not a field with a colour in it. */
+      input[type='color'] {
+        width: 3em;
+        height: 1.9em;
+        padding: 0;
+        background: #1d2230;
+        border: 1px solid #2c3444;
+        border-radius: 4px;
+        cursor: pointer;
+      }
       input[type='file'] {
         font: inherit;
         color: inherit;
@@ -254,6 +265,12 @@
       #role-list .clear:hover {
         color: #e07a7a;
       }
+      /* The glyph carries the role's own ink as its colour, set inline, so this
+         only has to leave room for it. */
+      #role-list .ink {
+        flex: 0 0 auto;
+        padding: 5px 8px;
+      }
       #role-list .role-heading {
         margin: 8px 0 2px;
         font-size: 11px;
@@ -264,14 +281,16 @@
       #role-list .role-heading:first-child {
         margin-top: 0;
       }
+      /* A canvas, because the thumbnail has to show the role's ink and the only
+         honest way to do that is the same tinting the export does. */
       #role-list .tile {
+        display: block;
         width: 24px;
         height: 24px;
         flex: 0 0 auto;
         border: 1px solid #2c3444;
         border-radius: 2px;
         background-color: #0c0e14;
-        background-repeat: no-repeat;
         image-rendering: pixelated;
       }
       #role-list .bound {
@@ -392,6 +411,13 @@
           >
             4 swap mode
           </button>
+          <button
+            type="button"
+            data-tool="recolor"
+            title="Click or drag over placed tiles to paint them with the current ink, leaving the tile and its mode alone"
+          >
+            5 recolor
+          </button>
         </div>
         <div class="row" id="preview-options">
           <span class="caption">new tile</span>
@@ -468,6 +494,24 @@
           <span class="zoom-level" id="zoom-level">fit</span>
           <button type="button" id="zoom-in" title="Zoom in (or ctrl + wheel)">
             +
+          </button>
+        </div>
+        <div class="row" id="ink">
+          <label for="ink-color">ink</label>
+          <input id="ink-color" type="color" value="#ffffff" />
+          <button
+            type="button"
+            data-ink-mode="multiply"
+            title="Keeps the tile's own shading and darkens it toward the colour — white changes nothing, and nothing gets brighter"
+          >
+            multiply
+          </button>
+          <button
+            type="button"
+            data-ink-mode="flat"
+            title="Keeps only the tile's shape and repaints every pixel it has — the full gamut, and what a monochrome stencil wants"
+          >
+            flat
           </button>
         </div>
 

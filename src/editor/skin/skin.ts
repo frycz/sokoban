@@ -10,6 +10,7 @@ import {
   clampSheetSettings,
   type SheetSettings,
 } from '../../render/sheet'
+import { NO_TINT, isSameTint, type Tint } from '../tint'
 
 export const UNBOUND = -1
 
@@ -23,6 +24,17 @@ export type SkinDraft = {
   readonly sheet: SheetSettings
   readonly isPixelated: boolean
   readonly bindings: Readonly<Record<TileRole, number>>
+  /**
+   * The ink each role's tile is drawn with, baked into the atlas at export so
+   * that the game never learns what colour is.
+   *
+   * A second map rather than a field on the binding, because the two are
+   * invalidated by different things: a tile index only means something against
+   * one grid, but a colour means the same thing against any of them. So
+   * re-slicing drops every binding and leaves the palette alone, and rebinding
+   * afterwards comes back to the colours already chosen.
+   */
+  readonly tints: Readonly<Record<TileRole, Tint>>
 }
 
 /**
@@ -34,12 +46,17 @@ const EMPTY_BINDINGS = Object.fromEntries(
   ROLE_ORDER.map((role) => [role, UNBOUND]),
 ) as Record<TileRole, number>
 
+const EMPTY_TINTS = Object.fromEntries(
+  ROLE_ORDER.map((role) => [role, NO_TINT]),
+) as Record<TileRole, Tint>
+
 export function createEmptySkinDraft(): SkinDraft {
   return {
     name: 'untitled',
     sheet: DEFAULT_SHEET_SETTINGS,
     isPixelated: true,
     bindings: EMPTY_BINDINGS,
+    tints: EMPTY_TINTS,
   }
 }
 
@@ -60,6 +77,24 @@ export function unbindRole(draft: SkinDraft, role: TileRole): SkinDraft {
   return bindRole(draft, role, UNBOUND)
 }
 
+/**
+ * Returns the same draft when nothing changed, as `bindRole` does. The tint is
+ * kept when the role is unbound rather than reset with it: it is the author's
+ * colour choice for that role, not a property of the tile that happened to be
+ * there.
+ */
+export function setRoleTint(
+  draft: SkinDraft,
+  role: TileRole,
+  tint: Tint,
+): SkinDraft {
+  if (isSameTint(draft.tints[role], tint)) {
+    return draft
+  }
+
+  return { ...draft, tints: { ...draft.tints, [role]: tint } }
+}
+
 export function setSheetSettings(
   draft: SkinDraft,
   sheet: SheetSettings,
@@ -71,6 +106,10 @@ export function setSheetSettings(
  * Re-slicing the sheet invalidates every binding, because a tile index only
  * means anything against one grid. Dropping them is honest; silently keeping
  * indices that now point at different art is not.
+ *
+ * The tints stay. A colour is not an index, so nothing about it stopped being
+ * true — and losing a hand-picked palette to a one-pixel change of margin would
+ * be the kind of help nobody asked for.
  */
 export function clearBindings(draft: SkinDraft): SkinDraft {
   return { ...draft, bindings: EMPTY_BINDINGS }
@@ -100,6 +139,10 @@ export function isSkinComplete(draft: SkinDraft): boolean {
  * column order, listing exactly the roles the image contains. The role list
  * being data rather than a convention in a comment is what lets a six-tile skin
  * and a fourteen-tile skin use one format with no version field.
+ *
+ * The tints are not in it, and that is the point: they are baked into the atlas
+ * as pixels, so the manifest a tinted skin writes is byte for byte the one an
+ * untinted skin writes and the game needs no notion of colour at all.
  */
 export function formatSkinManifest(draft: SkinDraft): string {
   const { tileWidth, tileHeight } = clampSheetSettings(draft.sheet)

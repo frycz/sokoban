@@ -3,12 +3,14 @@ import {
   clearCustomTile,
   clearCustomTiles,
   paintDocument,
+  recolorCustomTile,
   resizeDocument,
   setCustomTile,
   swapCustomTileMode,
   type Brush,
   type EditorDocument,
 } from './document'
+import type { Tint } from './tint'
 
 export type Session = {
   current: () => EditorDocument
@@ -21,16 +23,18 @@ export type Session = {
   /** Returns whether the document changed. */
   paint: (position: number, brush: Brush) => boolean
   /**
-   * Skin mode's three placement tools. They coalesce per stroke like `paint`,
+   * Skin mode's four placement tools. They coalesce per stroke like `paint`,
    * because placing custom tiles is the same dragging gesture.
    */
   placeCustomTile: (
     position: number,
     tileIndex: number,
     mode: CustomTileMode,
+    tint: Tint,
   ) => boolean
   eraseCustomTile: (position: number) => boolean
   swapCustomTileMode: (position: number) => boolean
+  recolorCustomTile: (position: number, tint: Tint) => boolean
   /** Every placement at once — what a new or re-sliced sheet invalidates. */
   eraseAllCustomTiles: () => boolean
   resize: (width: number, height: number) => boolean
@@ -83,8 +87,9 @@ export function createSession(initial: EditorDocument): Session {
     position: number,
     tileIndex: number,
     mode: CustomTileMode,
+    tint: Tint,
   ): boolean {
-    return stroke(setCustomTile(current(), position, tileIndex, mode))
+    return stroke(setCustomTile(current(), position, tileIndex, mode, tint))
   }
 
   function eraseCustomTile(position: number): boolean {
@@ -93,6 +98,10 @@ export function createSession(initial: EditorDocument): Session {
 
   function swapMode(position: number): boolean {
     return stroke(swapCustomTileMode(current(), position))
+  }
+
+  function recolor(position: number, tint: Tint): boolean {
+    return stroke(recolorCustomTile(current(), position, tint))
   }
 
   function eraseAllCustomTiles(): boolean {
@@ -140,6 +149,7 @@ export function createSession(initial: EditorDocument): Session {
     placeCustomTile,
     eraseCustomTile,
     swapCustomTileMode: swapMode,
+    recolorCustomTile: recolor,
     eraseAllCustomTiles,
     resize,
     replace: commit,

@@ -7,6 +7,7 @@ import {
   createEmptySkinDraft,
   type SkinDraft,
 } from './skin/skin'
+import { readTint, type Tint } from './tint'
 import { formatDocumentAsPublishedXsb, parseXsbToDocument } from './xsb'
 
 /**
@@ -74,6 +75,10 @@ export function decodeStoredLevel(text: string | null): EditorDocument | null {
  *
  * A bare number is what the first build of this feature wrote, before a
  * placement grew a mode. Read as `onTop`, which is what it drew.
+ *
+ * A record written before placements grew an ink has none, and no tint reads as
+ * the identity — so again the stored version did not have to move, because the
+ * field's absence already means what the old record meant.
  */
 function readCustomTiles(value: unknown, cellCount: number): CustomTiles {
   const stored = readObject(value)
@@ -96,6 +101,7 @@ function readCustomTiles(value: unknown, cellCount: number): CustomTiles {
     customTiles.set(position, {
       tileIndex,
       mode: readObject(record).mode === 'overwrite' ? 'overwrite' : 'onTop',
+      tint: readTint(readObject(record).tint),
     })
   }
 
@@ -112,6 +118,7 @@ export function encodeStoredSkin(
     sheet: draft.sheet,
     isPixelated: draft.isPixelated,
     bindings: draft.bindings,
+    tints: draft.tints,
     sheetDataUrl,
   })
 }
@@ -123,7 +130,9 @@ export function encodeStoredSkin(
  *
  * A draft restored without its sheet comes back unbound, for the same reason
  * re-slicing drops every binding: a tile index only means something against one
- * sheet, and keeping indices that point at nothing is silently wrong.
+ * sheet, and keeping indices that point at nothing is silently wrong. The
+ * palette survives that, as it survives a re-slice — a colour was never about
+ * the sheet.
  */
 export function decodeStoredSkin(text: string | null): StoredSkin | null {
   const record = readRecord(text)
@@ -147,6 +156,7 @@ export function decodeStoredSkin(text: string | null): StoredSkin | null {
         ? record.isPixelated
         : empty.isPixelated,
     bindings: readBindings(record.bindings),
+    tints: readTints(record.tints),
   }
 
   return {
@@ -202,6 +212,19 @@ function readBindings(value: unknown): Record<TileRole, number> {
   return Object.fromEntries(
     ROLE_ORDER.map((role) => [role, readTileIndex(stored[role])]),
   ) as Record<TileRole, number>
+}
+
+/**
+ * Built from `ROLE_ORDER` like `readBindings` is, and for the same reasons. A
+ * record written before the tints existed has none, and every role comes back
+ * at the identity tint — which is what it was being drawn with.
+ */
+function readTints(value: unknown): Record<TileRole, Tint> {
+  const stored = readObject(value)
+
+  return Object.fromEntries(
+    ROLE_ORDER.map((role) => [role, readTint(stored[role])]),
+  ) as Record<TileRole, Tint>
 }
 
 function readTileIndex(value: unknown): number {

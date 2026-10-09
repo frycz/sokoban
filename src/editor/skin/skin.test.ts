@@ -4,6 +4,7 @@ import {
   ROLE_ORDER,
   WALL_VARIANT_ROLES,
 } from '../../render/tile-roles'
+import { NO_TINT, type Tint } from '../tint'
 import { getAtlasSize, getAtlasSlotX } from './atlas'
 import {
   UNBOUND,
@@ -14,11 +15,14 @@ import {
   getBoundRoles,
   getMissingRequiredRoles,
   isSkinComplete,
+  setRoleTint,
   setSheetSettings,
   toSkinFileName,
   unbindRole,
   type SkinDraft,
 } from './skin'
+
+const GREEN: Tint = { color: '#55aa33', mode: 'flat' }
 
 function bindEverything(draft: SkinDraft): SkinDraft {
   return ROLE_ORDER.reduce(
@@ -107,6 +111,41 @@ describe('getBoundRoles', () => {
   })
 })
 
+describe('setRoleTint', () => {
+  it('paints one role without touching the others or its tile', () => {
+    const draft = setRoleTint(
+      bindRole(createEmptySkinDraft(), 'wall', 7),
+      'wall',
+      GREEN,
+    )
+
+    expect(draft.tints.wall).toEqual(GREEN)
+    expect(draft.tints.floor).toEqual(NO_TINT)
+    expect(draft.bindings.wall).toBe(7)
+  })
+
+  it('returns the same draft when the ink is unchanged', () => {
+    const draft = setRoleTint(createEmptySkinDraft(), 'wall', GREEN)
+
+    expect(setRoleTint(draft, 'wall', { ...GREEN })).toBe(draft)
+  })
+
+  /**
+   * An ink outliving its tile is harmless — it is a colour the author chose for
+   * that role, not a property of whatever tile happened to be bound — and it is
+   * what makes rebinding after a re-slice come back to the same palette.
+   */
+  it('survives the role being unbound', () => {
+    const draft = unbindRole(
+      setRoleTint(bindRole(createEmptySkinDraft(), 'wall', 7), 'wall', GREEN),
+      'wall',
+    )
+
+    expect(draft.bindings.wall).toBe(UNBOUND)
+    expect(draft.tints.wall).toEqual(GREEN)
+  })
+})
+
 describe('clearBindings', () => {
   it('drops every binding, because an index only means one grid', () => {
     const draft = clearBindings(bindEverything(createEmptySkinDraft()))
@@ -122,6 +161,15 @@ describe('clearBindings', () => {
 
     expect(draft.name).toBe('mossy')
     expect(draft.sheet.tileWidth).toBe(32)
+  })
+
+  /** A colour is not an index, so a re-slice has not invalidated it. */
+  it('keeps the palette', () => {
+    const draft = clearBindings(
+      setRoleTint(bindEverything(createEmptySkinDraft()), 'floor', GREEN),
+    )
+
+    expect(draft.tints.floor).toEqual(GREEN)
   })
 })
 
@@ -161,6 +209,23 @@ describe('formatSkinManifest', () => {
       pixelated: true,
       roles: [...ROLE_ORDER],
     })
+  })
+
+  /**
+   * The ink is pixels in the atlas by the time anything reads this file, which
+   * is the whole reason the game needs no notion of colour: a tinted skin and an
+   * untinted one write the same manifest.
+   */
+  it('says nothing about the inks, because they are baked into the atlas', () => {
+    const draft = setRoleTint(
+      bindRequired(createEmptySkinDraft()),
+      'floor',
+      GREEN,
+    )
+
+    expect(JSON.parse(formatSkinManifest(draft))).toEqual(
+      JSON.parse(formatSkinManifest(bindRequired(createEmptySkinDraft()))),
+    )
   })
 
   it('lists only the roles the image actually contains', () => {

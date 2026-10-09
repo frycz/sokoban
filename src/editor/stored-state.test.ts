@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { xsb } from '../core/test-helpers'
 import { setCustomTile } from './document'
-import { bindRole, createEmptySkinDraft, UNBOUND } from './skin/skin'
+import {
+  bindRole,
+  createEmptySkinDraft,
+  setRoleTint,
+  UNBOUND,
+} from './skin/skin'
+import { NO_TINT, type Tint } from './tint'
 import {
   decodeStoredLevel,
   decodeStoredSkin,
@@ -9,6 +15,8 @@ import {
   encodeStoredSkin,
 } from './stored-state'
 import { formatDocumentAsXsb, parseXsbToDocument } from './xsb'
+
+const GREEN: Tint = { color: '#55aa33', mode: 'flat' }
 
 const SHEET = 'data:image/png;base64,AAAA'
 
@@ -72,16 +80,17 @@ describe('stored level', () => {
 
   it('keeps the custom tiles, which XSB has nowhere to put', () => {
     const placed = setCustomTile(
-      setCustomTile(parseXsbToDocument(LEVEL), 8, 20, 'onTop'),
+      setCustomTile(parseXsbToDocument(LEVEL), 8, 20, 'onTop', NO_TINT),
       9,
       21,
       'overwrite',
+      GREEN,
     )
     const restored = decodeStoredLevel(encodeStoredLevel(placed))
 
     expect(restored && [...restored.customTiles]).toEqual([
-      [8, { tileIndex: 20, mode: 'onTop' }],
-      [9, { tileIndex: 21, mode: 'overwrite' }],
+      [8, { tileIndex: 20, mode: 'onTop', tint: NO_TINT }],
+      [9, { tileIndex: 21, mode: 'overwrite', tint: GREEN }],
     ])
   })
 
@@ -97,22 +106,53 @@ describe('stored level', () => {
     )
 
     expect(restored && [...restored.customTiles]).toEqual([
-      [0, { tileIndex: 4, mode: 'onTop' }],
+      [0, { tileIndex: 4, mode: 'onTop', tint: NO_TINT }],
     ])
   })
 
   /**
-   * The mode is the one field a stored placement can be missing, because the
-   * first build of the feature had no modes. On top is what those drew.
+   * The mode and the ink are the two fields a stored placement can be missing,
+   * because neither existed in the first build of the feature. On top with no
+   * ink is what those drew, so absence already means the right thing and the
+   * stored version never had to move.
    */
-  it('reads a placement with no mode, and a bare index, as on top', () => {
+  it('reads a placement with no mode or ink, and a bare index, as on top', () => {
     const restored = decodeStoredLevel(
       storedLevelWith({ 0: { tileIndex: 4 }, 1: 5, 2: { mode: 'overwrite' } }),
     )
 
     expect(restored && [...restored.customTiles]).toEqual([
-      [0, { tileIndex: 4, mode: 'onTop' }],
-      [1, { tileIndex: 5, mode: 'onTop' }],
+      [0, { tileIndex: 4, mode: 'onTop', tint: NO_TINT }],
+      [1, { tileIndex: 5, mode: 'onTop', tint: NO_TINT }],
+    ])
+  })
+
+  it('reads an ink it cannot make sense of as no ink at all', () => {
+    const restored = decodeStoredLevel(
+      storedLevelWith({
+        0: { tileIndex: 4, mode: 'onTop', tint: { color: 'rebeccapurple' } },
+        1: {
+          tileIndex: 4,
+          mode: 'onTop',
+          tint: { color: '#ABC123', mode: 'x' },
+        },
+        2: { tileIndex: 4, mode: 'onTop', tint: 'green' },
+      }),
+    )
+
+    expect(restored && [...restored.customTiles]).toEqual([
+      [0, { tileIndex: 4, mode: 'onTop', tint: NO_TINT }],
+      // The colour is fine, only the mode is nonsense — and a case-folded hex
+      // is a colour, so only the mode falls back.
+      [
+        1,
+        {
+          tileIndex: 4,
+          mode: 'onTop',
+          tint: { color: '#abc123', mode: 'multiply' },
+        },
+      ],
+      [2, { tileIndex: 4, mode: 'onTop', tint: NO_TINT }],
     ])
   })
 
@@ -127,10 +167,14 @@ describe('stored level', () => {
 })
 
 describe('stored skin', () => {
-  const draft = bindRole(
-    { ...createEmptySkinDraft(), name: 'mossy stone', isPixelated: false },
+  const draft = setRoleTint(
+    bindRole(
+      { ...createEmptySkinDraft(), name: 'mossy stone', isPixelated: false },
+      'floor',
+      7,
+    ),
     'floor',
-    7,
+    GREEN,
   )
 
   it('round-trips a draft and its sheet', () => {
@@ -140,11 +184,16 @@ describe('stored skin', () => {
     })
   })
 
-  it('drops every binding when the sheet did not come back', () => {
+  /**
+   * The palette outlives the sheet, as it outlives a re-slice: a colour was
+   * never an index into a grid, so nothing about it stopped being true.
+   */
+  it('drops every binding but keeps the palette when the sheet did not come back', () => {
     const restored = decodeStoredSkin(encodeStoredSkin(draft, null))
 
     expect(restored?.sheetDataUrl).toBeNull()
     expect(restored?.draft.bindings.floor).toBe(UNBOUND)
+    expect(restored?.draft.tints.floor).toEqual(GREEN)
     expect(restored?.draft.name).toBe('mossy stone')
   })
 
@@ -168,6 +217,7 @@ describe('stored skin', () => {
         isPixelated: 'yes',
         sheet: { tileWidth: 'wide', tileHeight: 0, margin: -3, spacing: 2.7 },
         bindings: { floor: 'first', goal: -2, wall: 1.5, box: 4 },
+        tints: { floor: { color: 'chartreuse' }, goal: GREEN, wall: 7 },
         sheetDataUrl: SHEET,
       }),
     )
@@ -184,6 +234,9 @@ describe('stored skin', () => {
     expect(restored?.draft.bindings.goal).toBe(UNBOUND)
     expect(restored?.draft.bindings.wall).toBe(UNBOUND)
     expect(restored?.draft.bindings.box).toBe(4)
+    expect(restored?.draft.tints.floor).toEqual(NO_TINT)
+    expect(restored?.draft.tints.goal).toEqual(GREEN)
+    expect(restored?.draft.tints.wall).toEqual(NO_TINT)
   })
 
   it('gives a role that did not exist when the state was written no binding', () => {

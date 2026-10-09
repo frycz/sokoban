@@ -8,13 +8,17 @@ import {
   MAX_DOCUMENT_SIZE,
   MIN_DOCUMENT_SIZE,
   paintDocument,
+  recolorCustomTile,
   resizeDocument,
   setCustomTile,
   swapCustomTileMode,
 } from './document'
+import { NO_TINT, type Tint } from './tint'
 import { formatDocumentAsXsb, parseXsbToDocument } from './xsb'
 
 const positionOf = (width: number, x: number, y: number) => y * width + x
+
+const GREEN: Tint = { color: '#55aa33', mode: 'flat' }
 
 describe('createEmptyDocument', () => {
   it('starts as solid wall, so drawing carves a room out', () => {
@@ -104,10 +108,17 @@ describe('resizeDocument', () => {
 
   it('keeps every custom tile on its own cell when the width changes', () => {
     const start = setCustomTile(
-      setCustomTile(createEmptyDocument(4, 4), positionOf(4, 3, 0), 7, 'onTop'),
+      setCustomTile(
+        createEmptyDocument(4, 4),
+        positionOf(4, 3, 0),
+        7,
+        'onTop',
+        NO_TINT,
+      ),
       positionOf(4, 1, 2),
       9,
       'overwrite',
+      GREEN,
     )
 
     const widened = resizeDocument(start, 6, 4)
@@ -115,10 +126,14 @@ describe('resizeDocument', () => {
     expect(widened.customTiles.get(positionOf(6, 3, 0))).toEqual({
       tileIndex: 7,
       mode: 'onTop',
+      tint: NO_TINT,
     })
+    // The ink rides along with the rest of the placement: it is part of what
+    // that cell looks like, not something keyed by position.
     expect(widened.customTiles.get(positionOf(6, 1, 2))).toEqual({
       tileIndex: 9,
       mode: 'overwrite',
+      tint: GREEN,
     })
     expect(widened.customTiles.size).toBe(2)
   })
@@ -129,6 +144,7 @@ describe('resizeDocument', () => {
       positionOf(6, 5, 5),
       7,
       'onTop',
+      NO_TINT,
     )
 
     expect(resizeDocument(start, 4, 4).customTiles.size).toBe(0)
@@ -140,40 +156,51 @@ describe('custom tiles', () => {
   const middle = positionOf(3, 1, 1)
 
   it('places a tile on one cell and takes it off again', () => {
-    const placed = setCustomTile(start, middle, 7, 'onTop')
+    const placed = setCustomTile(start, middle, 7, 'onTop', NO_TINT)
 
     expect(placed.customTiles.get(middle)).toEqual({
       tileIndex: 7,
       mode: 'onTop',
+      tint: NO_TINT,
     })
     expect(clearCustomTile(placed, middle).customTiles.size).toBe(0)
   })
 
   it('leaves the cells alone, so a placement is art and not level structure', () => {
-    expect(setCustomTile(start, middle, 7, 'overwrite').cells).toBe(start.cells)
+    expect(setCustomTile(start, middle, 7, 'overwrite', GREEN).cells).toBe(
+      start.cells,
+    )
   })
 
   it('returns the same document when nothing would change', () => {
-    const placed = setCustomTile(start, middle, 7, 'onTop')
+    const placed = setCustomTile(start, middle, 7, 'onTop', NO_TINT)
 
-    expect(setCustomTile(placed, middle, 7, 'onTop')).toBe(placed)
+    expect(setCustomTile(placed, middle, 7, 'onTop', NO_TINT)).toBe(placed)
     expect(clearCustomTile(start, middle)).toBe(start)
     expect(clearCustomTiles(start)).toBe(start)
   })
 
   it('counts a changed mode as a change, with the same tile', () => {
-    const placed = setCustomTile(start, middle, 7, 'onTop')
-    const overwriting = setCustomTile(placed, middle, 7, 'overwrite')
+    const placed = setCustomTile(start, middle, 7, 'onTop', NO_TINT)
+    const overwriting = setCustomTile(placed, middle, 7, 'overwrite', NO_TINT)
 
     expect(overwriting).not.toBe(placed)
     expect(isCellOverwritten(overwriting, middle)).toBe(true)
   })
 
+  it('counts a changed ink as a change, with the same tile and mode', () => {
+    const placed = setCustomTile(start, middle, 7, 'onTop', NO_TINT)
+    const inked = setCustomTile(placed, middle, 7, 'onTop', GREEN)
+
+    expect(inked).not.toBe(placed)
+    expect(inked.customTiles.get(middle)?.tint).toEqual(GREEN)
+  })
+
   it('refuses a position off the grid and an index that is not one', () => {
-    expect(setCustomTile(start, -1, 7, 'onTop')).toBe(start)
-    expect(setCustomTile(start, 9, 7, 'onTop')).toBe(start)
-    expect(setCustomTile(start, middle, -1, 'onTop')).toBe(start)
-    expect(setCustomTile(start, middle, 1.5, 'onTop')).toBe(start)
+    expect(setCustomTile(start, -1, 7, 'onTop', NO_TINT)).toBe(start)
+    expect(setCustomTile(start, 9, 7, 'onTop', NO_TINT)).toBe(start)
+    expect(setCustomTile(start, middle, -1, 'onTop', NO_TINT)).toBe(start)
+    expect(setCustomTile(start, middle, 1.5, 'onTop', NO_TINT)).toBe(start)
   })
 })
 
@@ -181,21 +208,50 @@ describe('swapCustomTileMode', () => {
   const start = createEmptyDocument(3, 3)
   const middle = positionOf(3, 1, 1)
 
-  it('flips the mode both ways and leaves the tile alone', () => {
-    const placed = setCustomTile(start, middle, 7, 'onTop')
+  it('flips the mode both ways and leaves the tile and its ink alone', () => {
+    const placed = setCustomTile(start, middle, 7, 'onTop', GREEN)
     const overwriting = swapCustomTileMode(placed, middle)
 
     expect(overwriting.customTiles.get(middle)).toEqual({
       tileIndex: 7,
       mode: 'overwrite',
+      tint: GREEN,
     })
     expect(
       swapCustomTileMode(overwriting, middle).customTiles.get(middle),
-    ).toEqual({ tileIndex: 7, mode: 'onTop' })
+    ).toEqual({ tileIndex: 7, mode: 'onTop', tint: GREEN })
   })
 
   it('returns the same document for a cell with no tile placed', () => {
     expect(swapCustomTileMode(start, middle)).toBe(start)
     expect(swapCustomTileMode(start, -1)).toBe(start)
+  })
+})
+
+describe('recolorCustomTile', () => {
+  const start = createEmptyDocument(3, 3)
+  const middle = positionOf(3, 1, 1)
+
+  it('repaints a placement and leaves its tile and mode alone', () => {
+    const placed = setCustomTile(start, middle, 7, 'overwrite', NO_TINT)
+
+    expect(
+      recolorCustomTile(placed, middle, GREEN).customTiles.get(middle),
+    ).toEqual({ tileIndex: 7, mode: 'overwrite', tint: GREEN })
+  })
+
+  /**
+   * Unlike swapping, recolouring is idempotent — which is what lets it be
+   * dragged across a row of cells without flickering back and forth.
+   */
+  it('returns the same document when the ink is already that', () => {
+    const inked = setCustomTile(start, middle, 7, 'onTop', GREEN)
+
+    expect(recolorCustomTile(inked, middle, GREEN)).toBe(inked)
+  })
+
+  it('does not put art down on a cell that has none', () => {
+    expect(recolorCustomTile(start, middle, GREEN)).toBe(start)
+    expect(recolorCustomTile(start, -1, GREEN)).toBe(start)
   })
 })

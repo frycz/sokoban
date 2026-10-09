@@ -6,10 +6,23 @@ import {
   getSourceTileRect,
 } from '../../render/sheet'
 import { getBoundRoles, getMissingRequiredRoles, type SkinDraft } from './skin'
+import type { Tint } from '../tint'
+import { tintSheetTile } from './tinted-tiles'
 
 export type AtlasSize = {
   readonly width: number
   readonly height: number
+}
+
+/**
+ * One column of the exported atlas: a tile of the sheet, and the ink it is
+ * drawn with. The ink is part of what a column *is* rather than something the
+ * bundle carries, because the colour is baked here — so the same sprite in two
+ * inks is two columns, and `tiles.json` stays a column number and a mode.
+ */
+export type AtlasTile = {
+  readonly tileIndex: number
+  readonly tint: Tint
 }
 
 /**
@@ -44,14 +57,14 @@ export function getAtlasSlotX(draft: SkinDraft, columnIndex: number): number {
  * sheet ships as a handful. Refuses a draft missing a required role rather than
  * emitting an atlas with holes in it.
  *
- * `customSheetTileIndices` are the hand-placed tiles, already deduplicated and
+ * `customColumns` are the hand-placed tiles, already deduplicated and
  * bounds-checked by `packCustomTiles` — the one place that decides which column
  * each of them lands in, so the atlas and `tiles.json` cannot disagree.
  */
 export function packSkinAtlas(
   draft: SkinDraft,
   image: ImageBitmap,
-  customSheetTileIndices: readonly number[] = [],
+  customColumns: readonly AtlasTile[] = [],
 ): HTMLCanvasElement {
   const missing = getMissingRequiredRoles(draft)
 
@@ -60,7 +73,7 @@ export function packSkinAtlas(
   }
 
   const { tileWidth, tileHeight } = clampSheetSettings(draft.sheet)
-  const size = getAtlasSize(draft, customSheetTileIndices.length)
+  const size = getAtlasSize(draft, customColumns.length)
   const canvas = document.createElement('canvas')
   canvas.width = size.width
   canvas.height = size.height
@@ -75,19 +88,20 @@ export function packSkinAtlas(
 
   const grid = getSheetGrid(draft.sheet, image.width, image.height)
 
-  const columns = [
+  const columns: (AtlasTile & { readonly describe: () => string })[] = [
     ...getBoundRoles(draft).map((role) => ({
-      sheetTileIndex: draft.bindings[role],
+      tileIndex: draft.bindings[role],
+      tint: draft.tints[role],
       describe: () => `the tile bound to ${role}`,
     })),
-    ...customSheetTileIndices.map((sheetTileIndex) => ({
-      sheetTileIndex,
-      describe: () => `the hand-placed tile #${sheetTileIndex}`,
+    ...customColumns.map((column) => ({
+      ...column,
+      describe: () => `the hand-placed tile #${column.tileIndex}`,
     })),
   ]
 
   for (const [columnIndex, column] of columns.entries()) {
-    const source = getSourceTileRect(draft.sheet, grid, column.sheetTileIndex)
+    const source = getSourceTileRect(draft.sheet, grid, column.tileIndex)
 
     if (source.width === 0) {
       throw new Error(
@@ -95,6 +109,10 @@ export function packSkinAtlas(
       )
     }
 
+    // Tinted into a tile of its own before anything is copied, so the extrusion
+    // duplicates the colour that actually ships rather than the sheet's
+    // original pixels — and so every copy below reads from (0, 0).
+    const tile = tintSheetTile(image, source, column.tint)
     const x = getAtlasSlotX(draft, columnIndex)
     const y = EXPORT_MARGIN
 
@@ -107,7 +125,7 @@ export function packSkinAtlas(
       destinationY: number,
     ) =>
       context.drawImage(
-        image,
+        tile,
         sourceX,
         sourceY,
         sourceWidth,
@@ -118,26 +136,19 @@ export function packSkinAtlas(
         sourceHeight,
       )
 
-    copy(source.x, source.y, tileWidth, tileHeight, x, y)
+    copy(0, 0, tileWidth, tileHeight, x, y)
 
     // The extrusion: edge rows and columns duplicated outward, then the four
     // corner pixels, so bilinear sampling at a seam reads this tile's own
     // colour instead of its neighbour's.
-    copy(source.x, source.y, 1, tileHeight, x - 1, y)
-    copy(source.x + tileWidth - 1, source.y, 1, tileHeight, x + tileWidth, y)
-    copy(source.x, source.y, tileWidth, 1, x, y - 1)
-    copy(source.x, source.y + tileHeight - 1, tileWidth, 1, x, y + tileHeight)
-    copy(source.x, source.y, 1, 1, x - 1, y - 1)
-    copy(source.x + tileWidth - 1, source.y, 1, 1, x + tileWidth, y - 1)
-    copy(source.x, source.y + tileHeight - 1, 1, 1, x - 1, y + tileHeight)
-    copy(
-      source.x + tileWidth - 1,
-      source.y + tileHeight - 1,
-      1,
-      1,
-      x + tileWidth,
-      y + tileHeight,
-    )
+    copy(0, 0, 1, tileHeight, x - 1, y)
+    copy(tileWidth - 1, 0, 1, tileHeight, x + tileWidth, y)
+    copy(0, 0, tileWidth, 1, x, y - 1)
+    copy(0, tileHeight - 1, tileWidth, 1, x, y + tileHeight)
+    copy(0, 0, 1, 1, x - 1, y - 1)
+    copy(tileWidth - 1, 0, 1, 1, x + tileWidth, y - 1)
+    copy(0, tileHeight - 1, 1, 1, x - 1, y + tileHeight)
+    copy(tileWidth - 1, tileHeight - 1, 1, 1, x + tileWidth, y + tileHeight)
   }
 
   return canvas

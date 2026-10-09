@@ -8,8 +8,10 @@ import {
   type EditorDocument,
 } from '../document'
 import { computeGridLayout } from '../layout'
+import type { Tint } from '../tint'
 import { getWallRoleAt } from './roles'
 import { isRoleBound, type SkinDraft } from './skin'
+import { createTintedTileCache } from './tinted-tiles'
 
 const PREVIEW_COLORS = {
   hover: '#ffffff',
@@ -57,6 +59,12 @@ export function createSkinPreviewPainter(
     throw new Error('Canvas 2D context is unavailable')
   }
 
+  // Every tile goes through the tint cache, the identity tint included, so the
+  // preview and the exported atlas are the same pixels by construction rather
+  // than by two code paths agreeing. The cache is what makes that affordable:
+  // this repaints the whole board on every pointer move.
+  const getTintedTile = createTintedTileCache()
+
   return function paint(editorDocument, draft, image, options): void {
     const layout = computeGridLayout(
       editorDocument,
@@ -90,6 +98,7 @@ export function createSkinPreviewPainter(
     /** Returns whether the tile was there to draw. */
     const drawSheetTile = (
       tileIndex: number,
+      tint: Tint,
       x: number,
       y: number,
     ): boolean => {
@@ -104,11 +113,7 @@ export function createSkinPreviewPainter(
       }
 
       context.drawImage(
-        image,
-        rect.x,
-        rect.y,
-        rect.width,
-        rect.height,
+        getTintedTile(image, rect, tint),
         x,
         y,
         tileSize,
@@ -133,7 +138,7 @@ export function createSkinPreviewPainter(
       if (
         options.showSkinTiles &&
         isRoleBound(draft, role) &&
-        drawSheetTile(draft.bindings[role], x, y)
+        drawSheetTile(draft.bindings[role], draft.tints[role], x, y)
       ) {
         return
       }
@@ -194,7 +199,7 @@ export function createSkinPreviewPainter(
       for (const [position, customTile] of editorDocument.customTiles) {
         const { x, y } = topLeftOf(position)
 
-        if (!drawSheetTile(customTile.tileIndex, x, y)) {
+        if (!drawSheetTile(customTile.tileIndex, customTile.tint, x, y)) {
           // The sheet is gone or the index is off it — a placement with no art
           // yet. An outline rather than nothing, so it can still be erased.
           context.strokeStyle = getRoleColor('goal')

@@ -1,5 +1,6 @@
 import { getPositionFromCoordinates } from '../core/rules'
 import type { CustomTileMode } from '../render/custom-tiles'
+import { isSameTint, type Tint } from './tint'
 
 /** What sits on a floor cell. A wall always holds nothing. */
 type CellContent = 'empty' | 'box' | 'player'
@@ -17,10 +18,16 @@ export type Cell = {
  * The index is the editor's own currency and the game never sees it — the
  * export turns it into an atlas column — but the mode travels all the way
  * through, which is why its type is the one the bundle format uses.
+ *
+ * The ink goes the other way again: the game never sees it either, because by
+ * the time it has the atlas the colour is already pixels. It is per cell rather
+ * than per tile for the same reason the mode is — one sprite can be green here
+ * and red there — and the export gives each distinct ink its own column.
  */
 export type CustomTile = {
   readonly tileIndex: number
   readonly mode: CustomTileMode
+  readonly tint: Tint
 }
 
 /**
@@ -194,6 +201,7 @@ export function setCustomTile(
   position: number,
   tileIndex: number,
   mode: CustomTileMode,
+  tint: Tint,
 ): EditorDocument {
   if (position < 0 || position >= editorDocument.cells.length) {
     return editorDocument
@@ -205,12 +213,44 @@ export function setCustomTile(
 
   const current = editorDocument.customTiles.get(position)
 
-  if (current && current.tileIndex === tileIndex && current.mode === mode) {
+  if (
+    current &&
+    current.tileIndex === tileIndex &&
+    current.mode === mode &&
+    isSameTint(current.tint, tint)
+  ) {
     return editorDocument
   }
 
   const customTiles = new Map(editorDocument.customTiles)
-  customTiles.set(position, { tileIndex, mode })
+  customTiles.set(position, { tileIndex, mode, tint })
+
+  return { ...editorDocument, customTiles }
+}
+
+/**
+ * Repaints one placement and leaves its tile and its mode alone — the ink's
+ * twin of `swapCustomTileMode`, and its own edit for the same reason:
+ * re-stamping the cell to change the colour needs the original tile still
+ * selected, and would quietly replace the art if it were not.
+ *
+ * Unlike swapping this is idempotent, so a drag over a row of cells settles
+ * rather than flickering, and a cell with no placement is left alone: an ink
+ * paints art that is there, it does not put art down.
+ */
+export function recolorCustomTile(
+  editorDocument: EditorDocument,
+  position: number,
+  tint: Tint,
+): EditorDocument {
+  const current = editorDocument.customTiles.get(position)
+
+  if (!current || isSameTint(current.tint, tint)) {
+    return editorDocument
+  }
+
+  const customTiles = new Map(editorDocument.customTiles)
+  customTiles.set(position, { ...current, tint })
 
   return { ...editorDocument, customTiles }
 }

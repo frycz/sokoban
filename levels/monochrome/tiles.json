@@ -1,97 +1,333 @@
 {
-  "width": 16,
-  "height": 12,
+  "width": 22,
+  "height": 13,
   "tiles": {
     "1": {
-      "column": 20,
-      "mode": "overwrite"
-    },
-    "7": {
       "column": 23,
       "mode": "overwrite"
     },
-    "11": {
-      "column": 13,
+    "2": {
+      "column": 30,
       "mode": "overwrite"
     },
-    "12": {
-      "column": 19,
+    "3": {
+      "column": 30,
       "mode": "overwrite"
     },
-    "13": {
-      "column": 22,
-      "mode": "onTop"
-    },
-    "15": {
-      "column": 22,
-      "mode": "onTop"
-    },
-    "40": {
-      "column": 21,
+    "4": {
+      "column": 30,
       "mode": "overwrite"
     },
-    "43": {
-      "column": 10,
+    "6": {
+      "column": 30,
       "mode": "overwrite"
     },
-    "44": {
-      "column": 16,
-      "mode": "overwrite"
-    },
-    "45": {
-      "column": 17,
-      "mode": "overwrite"
-    },
-    "47": {
-      "column": 22,
-      "mode": "onTop"
-    },
-    "56": {
-      "column": 25,
-      "mode": "overwrite"
-    },
-    "63": {
-      "column": 27,
-      "mode": "overwrite"
-    },
-    "74": {
-      "column": 24,
-      "mode": "overwrite"
-    },
-    "75": {
-      "column": 29,
-      "mode": "overwrite"
-    },
-    "86": {
-      "column": 13,
-      "mode": "overwrite"
-    },
-    "87": {
+    "7": {
       "column": 26,
       "mode": "overwrite"
     },
-    "88": {
-      "column": 12,
+    "8": {
+      "column": 30,
       "mode": "overwrite"
     },
-    "91": {
-      "column": 15,
+    "9": {
+      "column": 30,
       "mode": "overwrite"
     },
-    "103": {
-      "column": 14,
+    "10": {
+      "column": 30,
       "mode": "overwrite"
     },
-    "104": {
+    "11": {
+      "column": 18,
+      "mode": "overwrite"
+    },
+    "12": {
+      "column": 22,
+      "mode": "overwrite"
+    },
+    "13": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "14": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "15": {
+      "column": 25,
+      "mode": "onTop"
+    },
+    "16": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "18": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "19": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "20": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "42": {
       "column": 11,
       "mode": "overwrite"
     },
-    "127": {
+    "52": {
+      "column": 24,
+      "mode": "overwrite"
+    },
+    "55": {
+      "column": 13,
+      "mode": "overwrite"
+    },
+    "56": {
+      "column": 14,
+      "mode": "overwrite"
+    },
+    "59": {
+      "column": 25,
+      "mode": "onTop"
+    },
+    "62": {
+      "column": 12,
+      "mode": "overwrite"
+    },
+    "74": {
       "column": 28,
       "mode": "overwrite"
     },
-    "155": {
+    "76": {
+      "column": 10,
+      "mode": "overwrite"
+    },
+    "79": {
+      "column": 17,
+      "mode": "overwrite"
+    },
+    "81": {
+      "column": 31,
+      "mode": "overwrite"
+    },
+    "98": {
+      "column": 27,
+      "mode": "overwrite"
+    },
+    "99": {
+      "column": 33,
+      "mode": "overwrite"
+    },
+    "101": {
+      "column": 17,
+      "mode": "overwrite"
+    },
+    "116": {
       "column": 18,
+      "mode": "overwrite"
+    },
+    "117": {
+      "column": 29,
+      "mode": "overwrite"
+    },
+    "118": {
+      "column": 16,
+      "mode": "overwrite"
+    },
+    "121": {
+      "column": 20,
+      "mode": "overwrite"
+    },
+    "123": {
+      "column": 17,
+      "mode": "overwrite"
+    },
+    "139": {
+      "column": 19,
+      "mode": "overwrite"
+    },
+    "140": {
+      "column": 15,
+      "mode": "overwrite"
+    },
+    "145": {
+      "column": 17,
+      "mode": "overwrite"
+    },
+    "158": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "159": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "167": {
+      "column": 21,
+      "mode": "overwrite"
+    },
+    "169": {
+      "column": 32,
+      "mode": "overwrite"
+    },
+    "196": {
+      "column": 12,
+      "mode": "overwrite"
+    },
+    "200": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "201": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "202": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "203": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "204": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "205": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "206": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "207": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "208": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "209": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "210": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "211": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "212": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "237": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "238": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "239": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "264": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "265": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "266": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "267": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "268": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "269": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "270": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "271": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "272": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "273": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "274": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "275": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "276": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "277": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "278": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "279": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "280": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "281": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "282": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "283": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "284": {
+      "column": 30,
+      "mode": "overwrite"
+    },
+    "285": {
+      "column": 30,
       "mode": "overwrite"
     }
   }

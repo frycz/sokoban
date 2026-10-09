@@ -2,8 +2,10 @@ import type {
   CustomTileMap,
   CustomTilePlacement,
 } from '../../render/custom-tiles'
-import type { CustomTiles } from '../document'
+import type { CustomTile, CustomTiles } from '../document'
+import type { AtlasTile } from './atlas'
 import { getBoundRoles, type SkinDraft } from './skin'
+import { getTintKey, isIdentityTint } from '../tint'
 
 /**
  * How the hand-placed tiles leave the editor: extra columns on the end of the
@@ -11,23 +13,34 @@ import { getBoundRoles, type SkinDraft } from './skin'
  *
  * A placement in the document names a tile in the loaded sheet, which the game
  * never sees — it only ever has the packed atlas. So the export turns sheet
- * indices into atlas columns, one column per distinct tile however many cells
- * use it, appended after the role columns so `roles[n]` still describes column
- * `n` and the manifest does not have to grow a second list.
+ * indices into atlas columns, one column per distinct tile *in a distinct ink*
+ * however many cells use it, appended after the role columns so `roles[n]`
+ * still describes column `n` and the manifest does not have to grow a second
+ * list.
  *
  * The mode is not translated, only carried: it means the same thing to the game
- * renderer as it does to the preview.
+ * renderer as it does to the preview. The ink is not carried at all — it is
+ * already in the column's pixels by the time the game sees it.
  */
 export type CustomTilePacking = {
-  /** Sheet tile indices to append to the atlas, in column order. */
-  readonly sheetTileIndices: readonly number[]
+  /** The columns to append to the atlas, in column order. */
+  readonly columns: readonly AtlasTile[]
   /** Level position → what the game will draw there. */
   readonly placementOfPosition: CustomTileMap
 }
 
 const NO_CUSTOM_TILE_PACKING: CustomTilePacking = {
-  sheetTileIndices: [],
+  columns: [],
   placementOfPosition: new Map(),
+}
+
+/**
+ * What two cells have to agree on to share a column. The ink is in it because
+ * the colour is baked into the atlas: one sprite placed in green and in red is
+ * two columns, which is the whole cost of not teaching the game about colour.
+ */
+function getColumnKey(tile: AtlasTile | CustomTile): string {
+  return `${tile.tileIndex}|${getTintKey(tile.tint)}`
 }
 
 /**
@@ -36,8 +49,9 @@ const NO_CUSTOM_TILE_PACKING: CustomTilePacking = {
  * the settings now cut fewer tiles — is dropped rather than packed as a hole in
  * the atlas with cells pointing at it.
  *
- * Ascending index order so the atlas is stable: exporting the same level twice
- * gives byte-identical output whatever order the cells were drawn in.
+ * Ascending index order, then ink, so the atlas is stable: exporting the same
+ * level twice gives byte-identical output whatever order the cells were drawn
+ * in.
  */
 export function packCustomTiles(
   draft: SkinDraft,
@@ -53,25 +67,36 @@ export function packCustomTiles(
     return NO_CUSTOM_TILE_PACKING
   }
 
-  const sheetTileIndices = [
-    ...new Set(usable.map(([, customTile]) => customTile.tileIndex)),
-  ].sort((one, other) => one - other)
+  const distinct = new Map<string, AtlasTile>()
+
+  for (const [, customTile] of usable) {
+    distinct.set(getColumnKey(customTile), {
+      tileIndex: customTile.tileIndex,
+      tint: customTile.tint,
+    })
+  }
+
+  const columns = [...distinct.values()].sort(
+    (one, other) =>
+      one.tileIndex - other.tileIndex ||
+      getTintKey(one.tint).localeCompare(getTintKey(other.tint)),
+  )
 
   const firstColumn = getBoundRoles(draft).length
-  const columnOfSheetTileIndex = new Map(
-    sheetTileIndices.map((tileIndex, offset) => [
-      tileIndex,
+  const columnOfKey = new Map(
+    columns.map((column, offset) => [
+      getColumnKey(column),
       firstColumn + offset,
     ]),
   )
 
   return {
-    sheetTileIndices,
+    columns,
     placementOfPosition: new Map(
       usable.map(([position, customTile]): [number, CustomTilePlacement] => [
         position,
         {
-          column: columnOfSheetTileIndex.get(customTile.tileIndex)!,
+          column: columnOfKey.get(getColumnKey(customTile))!,
           mode: customTile.mode,
         },
       ]),
@@ -108,6 +133,24 @@ export function countOverwrites(customTiles: CustomTiles): number {
 
   for (const customTile of customTiles.values()) {
     if (customTile.mode === 'overwrite') {
+      count++
+    }
+  }
+
+  return count
+}
+
+/**
+ * How many placements carry an ink, which is also how many extra atlas columns
+ * the colour is costing — said in the sidebar because the one thing a tint can
+ * be is invisible, and an author who meant to paint a cell should be able to
+ * see that one did or did not take.
+ */
+export function countTinted(customTiles: CustomTiles): number {
+  let count = 0
+
+  for (const customTile of customTiles.values()) {
+    if (!isIdentityTint(customTile.tint)) {
       count++
     }
   }
