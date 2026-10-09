@@ -1,4 +1,5 @@
 import { COLORS } from '../render/colors'
+import { prepareBackingStore } from './backing-store'
 import { getCellX, getCellY, type EditorDocument } from './document'
 import { computeGridLayout } from './layout'
 
@@ -43,17 +44,12 @@ export function createEditorRenderer(
       view.clientHeight,
       zoom,
     )
-    const pixelRatio = window.devicePixelRatio || 1
-    const cssWidth = layout.contentWidth
-    const cssHeight = layout.contentHeight
-
-    canvas.style.width = `${cssWidth}px`
-    canvas.style.height = `${cssHeight}px`
-    canvas.width = Math.round(cssWidth * pixelRatio)
-    canvas.height = Math.round(cssHeight * pixelRatio)
-
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
-    context.clearRect(0, 0, cssWidth, cssHeight)
+    prepareBackingStore(
+      canvas,
+      context,
+      layout.contentWidth,
+      layout.contentHeight,
+    )
 
     const { tileSize } = layout
     const topLeftOf = (position: number) => ({

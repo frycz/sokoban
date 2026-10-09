@@ -1,8 +1,10 @@
+import { MAX_BACKING_PIXELS } from './backing-store'
+
 /**
  * Multiples of the fit-to-view scale, so `1` always shows the whole thing
  * whatever its size and the steps above it are what pan around.
  */
-const ZOOM_STEPS: readonly number[] = [1, 2, 3, 4, 6, 8, 12, 16]
+const ZOOM_STEPS: readonly number[] = [1, 2, 3, 4, 6, 8, 12]
 
 export type ZoomControl = {
   readonly current: () => number
@@ -36,11 +38,33 @@ export function createZoomControl(parts: {
 
   const isEnabled = (): boolean => parts.isEnabled?.() ?? true
 
+  /**
+   * The step one click away, or undefined when there is none to take.
+   *
+   * Zooming in runs out of browser before it runs out of list. The content is
+   * at most the view's size times the zoom in each direction, so its area grows
+   * as the square of it: 12× of a 1600px-wide view is a canvas no browser will
+   * allocate, while 12× of a 600px one is unremarkable. That is why the ceiling
+   * is a budget measured against the view rather than a shorter list of steps —
+   * the readout stops where the browser stops, on the machine it is running on.
+   */
+  function nextZoom(direction: number): number | undefined {
+    const next = ZOOM_STEPS[ZOOM_STEPS.indexOf(zoom) + direction]
+
+    if (next === undefined || direction < 0) {
+      return next
+    }
+
+    const area =
+      parts.view.clientWidth * next * (parts.view.clientHeight * next)
+
+    return area > MAX_BACKING_PIXELS ? undefined : next
+  }
+
   function syncControls(): void {
     parts.readout.textContent = zoom === 1 ? 'fit' : `${zoom}×`
-    parts.outButton.disabled = !isEnabled() || zoom === ZOOM_STEPS[0]
-    parts.inButton.disabled =
-      !isEnabled() || zoom === ZOOM_STEPS[ZOOM_STEPS.length - 1]
+    parts.outButton.disabled = !isEnabled() || nextZoom(-1) === undefined
+    parts.inButton.disabled = !isEnabled() || nextZoom(1) === undefined
   }
 
   /**
@@ -48,8 +72,8 @@ export function createZoomControl(parts: {
    * middle of it — zooming in on a corner of a big level otherwise lands
    * somewhere else entirely. The browser clamps the scroll offsets for us.
    */
-  function step(steps: number): void {
-    const next = ZOOM_STEPS[ZOOM_STEPS.indexOf(zoom) + steps]
+  function step(direction: number): void {
+    const next = nextZoom(direction)
 
     if (next === undefined || !isEnabled()) {
       return

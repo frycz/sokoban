@@ -1,6 +1,7 @@
 import { getSheetGrid, getSourceTileRect } from '../../render/sheet'
 import { getRoleColor } from '../../render/skin'
 import { getBaseRole, type TileRole } from '../../render/tile-roles'
+import { prepareBackingStore } from '../backing-store'
 import {
   getCellX,
   getCellY,
@@ -72,17 +73,12 @@ export function createSkinPreviewPainter(
       view.clientHeight,
       options.zoom,
     )
-    const pixelRatio = window.devicePixelRatio || 1
-    const cssWidth = layout.contentWidth
-    const cssHeight = layout.contentHeight
-
-    canvas.style.width = `${cssWidth}px`
-    canvas.style.height = `${cssHeight}px`
-    canvas.width = Math.round(cssWidth * pixelRatio)
-    canvas.height = Math.round(cssHeight * pixelRatio)
-
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
-    context.clearRect(0, 0, cssWidth, cssHeight)
+    prepareBackingStore(
+      canvas,
+      context,
+      layout.contentWidth,
+      layout.contentHeight,
+    )
     context.imageSmoothingEnabled = !draft.isPixelated
 
     const { tileSize } = layout

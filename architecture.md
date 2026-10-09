@@ -385,25 +385,28 @@ layout.ts │  stored-state.ts │            pure
       │        │   ↑         │
       │        │ autosave.ts │            the level slice, for both modes
       │        │   │         │
-    canvas.ts  zoom.ts  │  storage.ts │   localStorage and the zoom: leaves
+    canvas.ts  zoom.ts  │  storage.ts │   localStorage: a leaf
         └─────────┴─────┴──────┴──────┴→ the DOM: level-mode.ts, skin-mode.ts,
                                          publish.ts, index.ts
 ```
 
-| File              | Role                                                                                                                                            |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `document.ts`     | `EditorDocument`, `Cell`, `Brush`, `CustomTiles`, and the pure edits: `createEmptyDocument`, `paintDocument`, `setCustomTile`, `resizeDocument` |
-| `xsb.ts`          | `parseXsbToDocument` / `formatDocumentAsXsb` — the only text I/O                                                                                |
-| `validate.ts`     | `validateDocument(document)` → problems, counts, `isPlayable`                                                                                   |
-| `stored-state.ts` | encode / decode of what autosave keeps, for both modes. Pure                                                                                    |
-| `session.ts`      | the undo stack, the editor's one mutable value. No DOM                                                                                          |
-| `autosave.ts`     | the `level` slice: what the editor opens on, and the write both modes share                                                                     |
-| `layout.ts`       | tile size, origin, the canvas size a zoom needs, and pixel → cell. Pure                                                                         |
-| `canvas.ts`       | `(document, hoverPosition, zoom) => draw`. No logic                                                                                             |
-| `zoom.ts`         | the zoom shared by the three scrolling views: two buttons, ctrl + wheel, scroll anchoring. Imports nothing                                      |
-| `storage.ts`      | the three `localStorage` keys, every call guarded. Imports nothing                                                                              |
-| `publish.ts`      | the Export to levels/ panel: gate on `validateDocument`, then post the bundle                                                                   |
-| `index.ts`        | the mode switch, Clear storage, and the keys and resizes each mode gets                                                                         |
+| File               | Role                                                                                                                                            |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `document.ts`      | `EditorDocument`, `Cell`, `Brush`, `CustomTiles`, and the pure edits: `createEmptyDocument`, `paintDocument`, `setCustomTile`, `resizeDocument` |
+| `xsb.ts`           | `parseXsbToDocument` / `formatDocumentAsXsb` — the only text I/O                                                                                |
+| `validate.ts`      | `validateDocument(document)` → problems, counts, `isPlayable`                                                                                   |
+| `stored-state.ts`  | encode / decode of what autosave keeps, for both modes. Pure                                                                                    |
+| `session.ts`       | the undo stack, the editor's one mutable value. No DOM                                                                                          |
+| `autosave.ts`      | the `level` slice: what the editor opens on, and the write both modes share                                                                     |
+| `layout.ts`        | tile size, origin, the canvas size a zoom needs, and pixel → cell. Pure                                                                         |
+| `canvas.ts`        | `(document, hoverPosition, zoom) => draw`. No logic                                                                                             |
+| `zoom.ts`          | the zoom shared by the three scrolling views: two buttons, ctrl + wheel, scroll anchoring, and where the steps stop                             |
+| `backing-store.ts` | the canvas resize all three zooming painters share, and the pixel budget the zoom stops at                                                      |
+| `storage.ts`       | the three `localStorage` keys, every call guarded. Imports nothing                                                                              |
+| `publish.ts`       | the Export to levels/ panel: gate on `validateDocument`, then post the bundle                                                                   |
+| `index.ts`         | the mode switch, Clear storage, and the keys and resizes each mode gets                                                                         |
+
+`backing-store.ts` is left out of the diagram to keep it readable: it is a leaf under `canvas.ts` and `zoom.ts`, and under the two painters in `skin/` as well, which is the point of it — the pixel budget the zoom stops at and the resize that honours it are one number in one place.
 
 `stored-state.ts` also reads `skin/`, which is the one place the level half of the editor and the skin half meet outside a mode module: autosave covers both, so the codec has to know both shapes.
 
@@ -589,9 +592,11 @@ A wall with no floor around it is not drawn at all, exactly as in the game — n
 
 ### Zooming grows the canvas, it does not transform it
 
-`computeSheetLayout` takes a zoom that multiplies the fit-to-view scale and reports the canvas size that holds the result. The canvas is sized to that and sits in a scroll container, so panning is the browser's and the pointer handler keeps inverting one scale and origin rather than a second transform on top. Zoom being a multiple of the fit also caps the canvas at the view's size times the zoom, whatever the sheet's dimensions, so a large tileset cannot zoom its way into an allocation the browser refuses.
+`computeSheetLayout` takes a zoom that multiplies the fit-to-view scale and reports the canvas size that holds the result. The canvas is sized to that and sits in a scroll container, so panning is the browser's and the pointer handler keeps inverting one scale and origin rather than a second transform on top. Zoom being a multiple of the fit also caps the canvas at the view's size times the zoom, whatever the sheet's dimensions, so a large tileset is no harder on the canvas than a small one.
 
 `computeGridLayout` does the same for the board, so a large level can be worked on close up in either panel — level mode's grid and skin mode's preview each sit in their own scroll container. Three views, one gesture: `editor/zoom.ts` owns the step, the two buttons, ctrl + wheel and the scroll anchoring, and leaves sizing the canvas to whichever painter it belongs to.
+
+What a growing canvas costs is the price of not transforming, and it is paid in area: the content's sides are the view's times the zoom, so its _area_ is the view's times the zoom squared, times the device pixel ratio squared again. Deep enough and that is a buffer Chrome refuses outright — over 2^28 device pixels — having first spent a second of the main thread trying to allocate it, which reads as a hung tab rather than a slow one. Two things keep it in bounds, both in terms of the one budget in `backing-store.ts`: the zoom will not take a step whose content would exceed it, so the ceiling follows the window and the display instead of being a step count guessed up front, and the painters' shared resize clamps the pixel ratio rather than the layout, since at that depth everything lands on whole CSS pixels anyway. That resize is also the one place that knows a backing store is only reassigned when its size actually changes: assigning `width` reallocates and zeroes it, and the hover highlight repaints far too often to pay that.
 
 A zoom is a view setting rather than data: none of the three is stored with the skin or the level, and each resets to fit when the editor is cleared.
 

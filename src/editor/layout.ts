@@ -21,8 +21,10 @@ export type GridLayout = {
  *
  * Zoom multiplies the fitted tile size rather than naming an absolute one, so
  * the content is at most the view's size times the zoom whatever the level's
- * dimensions — a 100×100 level cannot zoom its way into a canvas the browser
- * refuses to allocate.
+ * dimensions — a 100×100 level is no harder on the canvas than a 10×10 one.
+ * That bounds the content's *sides*, not its area, which grows as the square of
+ * the zoom; what keeps it inside what the browser will allocate is the zoom
+ * itself stopping, in `createZoomControl`.
  */
 export function computeGridLayout(
   editorDocument: EditorDocument,

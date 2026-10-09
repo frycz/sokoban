@@ -3,6 +3,7 @@ import {
   getSourceTileRect,
   type SheetSettings,
 } from '../../render/sheet'
+import { prepareBackingStore } from '../backing-store'
 import { computeSheetLayout } from './palette-layout'
 
 const PALETTE_COLORS = {
@@ -52,15 +53,8 @@ export function createPalettePainter(
     )
     const cssWidth = layout.contentWidth
     const cssHeight = layout.contentHeight
-    const pixelRatio = window.devicePixelRatio || 1
 
-    canvas.style.width = `${cssWidth}px`
-    canvas.style.height = `${cssHeight}px`
-    canvas.width = Math.round(cssWidth * pixelRatio)
-    canvas.height = Math.round(cssHeight * pixelRatio)
-
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
-    context.clearRect(0, 0, cssWidth, cssHeight)
+    prepareBackingStore(canvas, context, cssWidth, cssHeight)
     context.imageSmoothingEnabled = !isPixelated
 
     if (!image) {
