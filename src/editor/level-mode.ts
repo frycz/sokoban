@@ -14,6 +14,7 @@ import { computeGridLayout, getPositionAtPixel } from './layout'
 import type { Session } from './session'
 import { validateDocument } from './validate'
 import { formatDocumentAsXsb, parseXsbToDocument } from './xsb'
+import { createZoomControl } from './zoom'
 
 const BRUSH_OF_KEY: Record<string, Brush | undefined> = {
   '1': 'wall',
@@ -27,6 +28,7 @@ export function createLevelMode(
   session: Session,
   levelAutosave: LevelAutosave,
 ): EditorMode {
+  const gridView = requireElement<HTMLElement>('#grid-view')
   const canvas = requireElement<HTMLCanvasElement>('#grid')
   const brushes = requireElement<HTMLElement>('#brushes')
   const widthInput = requireElement<HTMLInputElement>('#width')
@@ -38,11 +40,22 @@ export function createLevelMode(
   const xsbText = requireElement<HTMLTextAreaElement>('#xsb')
   const report = requireElement<HTMLElement>('#report')
 
-  const render = createEditorRenderer(canvas)
+  const render = createEditorRenderer(gridView, canvas)
 
   let selectedBrush: Brush = 'floor'
   let hoverPosition = -1
   let isPainting = false
+
+  // View state like the selected brush, so nothing about it is autosaved: the
+  // zoom is how the board is being looked at, not part of the level.
+  const zoom = createZoomControl({
+    view: gridView,
+    content: canvas,
+    outButton: requireElement<HTMLButtonElement>('#grid-zoom-out'),
+    inButton: requireElement<HTMLButtonElement>('#grid-zoom-in'),
+    readout: requireElement<HTMLElement>('#grid-zoom-level'),
+    repaint: () => update(),
+  })
 
   for (const input of [widthInput, heightInput]) {
     input.min = String(MIN_DOCUMENT_SIZE)
@@ -59,7 +72,8 @@ export function createLevelMode(
     // Every edit lands here, so autosave rides along with the redraw rather
     // than being remembered at each of the places that change the document.
     levelAutosave.persist()
-    render(editorDocument, hoverPosition)
+    render(editorDocument, hoverPosition, zoom.current())
+    zoom.syncControls()
 
     const validation = validateDocument(editorDocument)
     undoButton.disabled = !session.canUndo()
@@ -97,11 +111,15 @@ export function createLevelMode(
 
   function getPositionFromPointer(event: PointerEvent): number {
     const editorDocument = session.current()
+    // The bounds are the canvas's and the layout is the view's: the canvas is
+    // the zoomed content inside the scrolling view, so a pointer offset into it
+    // is already in the same space the layout's origin is in.
     const bounds = canvas.getBoundingClientRect()
     const layout = computeGridLayout(
       editorDocument,
-      canvas.clientWidth,
-      canvas.clientHeight,
+      gridView.clientWidth,
+      gridView.clientHeight,
+      zoom.current(),
     )
 
     return getPositionAtPixel(
@@ -225,6 +243,7 @@ export function createLevelMode(
     session.replace(createEmptyLevelDocument())
     levelAutosave.markSaved()
     xsbText.value = ''
+    zoom.reset()
     syncSizeInputs()
   }
 

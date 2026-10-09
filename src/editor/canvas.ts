@@ -13,10 +13,19 @@ const EDITOR_COLORS = {
  *
  * Unlike the game, every wall is drawn: in the editor there is no "outside the
  * level" to hide, because the walls are the thing being edited.
+ *
+ * `view` is the scroll container; the canvas is sized to the zoomed content so
+ * that panning is the browser's job rather than a second transform to invert —
+ * the sheet palette works the same way.
  */
 export function createEditorRenderer(
+  view: HTMLElement,
   canvas: HTMLCanvasElement,
-): (editorDocument: EditorDocument, hoverPosition: number) => void {
+): (
+  editorDocument: EditorDocument,
+  hoverPosition: number,
+  zoom: number,
+) => void {
   const context = canvas.getContext('2d')
 
   if (!context) {
@@ -26,17 +35,26 @@ export function createEditorRenderer(
   return function render(
     editorDocument: EditorDocument,
     hoverPosition: number,
+    zoom: number,
   ): void {
+    const layout = computeGridLayout(
+      editorDocument,
+      view.clientWidth,
+      view.clientHeight,
+      zoom,
+    )
     const pixelRatio = window.devicePixelRatio || 1
-    const cssWidth = canvas.clientWidth
-    const cssHeight = canvas.clientHeight
+    const cssWidth = layout.contentWidth
+    const cssHeight = layout.contentHeight
+
+    canvas.style.width = `${cssWidth}px`
+    canvas.style.height = `${cssHeight}px`
     canvas.width = Math.round(cssWidth * pixelRatio)
     canvas.height = Math.round(cssHeight * pixelRatio)
 
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
     context.clearRect(0, 0, cssWidth, cssHeight)
 
-    const layout = computeGridLayout(editorDocument, cssWidth, cssHeight)
     const { tileSize } = layout
     const topLeftOf = (position: number) => ({
       x: layout.originX + getCellX(editorDocument, position) * tileSize,

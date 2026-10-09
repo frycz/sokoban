@@ -26,6 +26,8 @@ export type SkinPreviewView = {
   readonly showCustomTiles: boolean
   /** -1 when the pointer is off the board. */
   readonly hoverPosition: number
+  /** A multiple of the fit-to-view tile size; see `computeGridLayout`. */
+  readonly zoom: number
 }
 
 /**
@@ -35,14 +37,19 @@ export type SkinPreviewView = {
  *
  * Like the game, a wall with no floor anywhere around it is not drawn at all,
  * so a skin never has to supply art for "outside the level".
+ *
+ * `view` is the scroll container; the canvas is sized to the zoomed content so
+ * that panning is the browser's job rather than a second transform to invert —
+ * the sheet palette works the same way.
  */
 export function createSkinPreviewPainter(
+  view: HTMLElement,
   canvas: HTMLCanvasElement,
 ): (
   editorDocument: EditorDocument,
   draft: SkinDraft,
   image: ImageBitmap | null,
-  view: SkinPreviewView,
+  options: SkinPreviewView,
 ) => void {
   const context = canvas.getContext('2d')
 
@@ -50,10 +57,19 @@ export function createSkinPreviewPainter(
     throw new Error('Canvas 2D context is unavailable')
   }
 
-  return function paint(editorDocument, draft, image, view): void {
+  return function paint(editorDocument, draft, image, options): void {
+    const layout = computeGridLayout(
+      editorDocument,
+      view.clientWidth,
+      view.clientHeight,
+      options.zoom,
+    )
     const pixelRatio = window.devicePixelRatio || 1
-    const cssWidth = canvas.clientWidth
-    const cssHeight = canvas.clientHeight
+    const cssWidth = layout.contentWidth
+    const cssHeight = layout.contentHeight
+
+    canvas.style.width = `${cssWidth}px`
+    canvas.style.height = `${cssHeight}px`
     canvas.width = Math.round(cssWidth * pixelRatio)
     canvas.height = Math.round(cssHeight * pixelRatio)
 
@@ -61,7 +77,6 @@ export function createSkinPreviewPainter(
     context.clearRect(0, 0, cssWidth, cssHeight)
     context.imageSmoothingEnabled = !draft.isPixelated
 
-    const layout = computeGridLayout(editorDocument, cssWidth, cssHeight)
     const { tileSize } = layout
     const grid = image
       ? getSheetGrid(draft.sheet, image.width, image.height)
@@ -116,7 +131,7 @@ export function createSkinPreviewPainter(
       // fallback a half-bound skin already draws, so the level's shape is still
       // readable under whatever has been placed by hand.
       if (
-        view.showSkinTiles &&
+        options.showSkinTiles &&
         isRoleBound(draft, role) &&
         drawSheetTile(draft.bindings[role], x, y)
       ) {
@@ -142,7 +157,10 @@ export function createSkinPreviewPainter(
       // a transparent tile a hole rather than a window onto the floor. Only
       // while the placements are being shown: hiding them has to give the skin
       // back, not leave gaps.
-      if (view.showCustomTiles && isCellOverwritten(editorDocument, position)) {
+      if (
+        options.showCustomTiles &&
+        isCellOverwritten(editorDocument, position)
+      ) {
         continue
       }
 
@@ -172,7 +190,7 @@ export function createSkinPreviewPainter(
     // Last, over everything, and over the culled cells too: a tile placed by
     // hand is the author saying what that cell looks like, which outranks both
     // the skin's answer and the board's own silhouette.
-    if (view.showCustomTiles) {
+    if (options.showCustomTiles) {
       for (const [position, customTile] of editorDocument.customTiles) {
         const { x, y } = topLeftOf(position)
 
@@ -187,10 +205,10 @@ export function createSkinPreviewPainter(
     }
 
     if (
-      view.hoverPosition >= 0 &&
-      view.hoverPosition < editorDocument.cells.length
+      options.hoverPosition >= 0 &&
+      options.hoverPosition < editorDocument.cells.length
     ) {
-      const { x, y } = topLeftOf(view.hoverPosition)
+      const { x, y } = topLeftOf(options.hoverPosition)
       context.strokeStyle = PREVIEW_COLORS.hover
       context.lineWidth = 2
       context.strokeRect(x + 1, y + 1, tileSize - 2, tileSize - 2)

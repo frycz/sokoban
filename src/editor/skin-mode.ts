@@ -11,6 +11,7 @@ import { computeGridLayout, getPositionAtPixel } from './layout'
 import type { SkinExport } from './publish'
 import type { Session } from './session'
 import { readStoredText, writeStoredText } from './storage'
+import { createZoomControl } from './zoom'
 import { decodeStoredSkin, encodeStoredSkin } from './stored-state'
 import { getAtlasSize, packSkinAtlas } from './skin/atlas'
 import {
@@ -41,12 +42,6 @@ import {
 } from './skin/skin'
 
 const THUMBNAIL_SIZE = 24
-
-/**
- * Multiples of the fit-to-view scale, so `1` always shows the whole sheet
- * whatever its size and the steps above it are what pan around.
- */
-const ZOOM_STEPS: readonly number[] = [1, 2, 3, 4, 6, 8, 12, 16]
 
 /**
  * The sidebar groups roles rather than listing fourteen flat, because the two
@@ -123,9 +118,7 @@ export function createSkinMode(
   const nameInput = requireElement<HTMLInputElement>('#skin-name')
   const paletteView = requireElement<HTMLElement>('#palette-view')
   const paletteCanvas = requireElement<HTMLCanvasElement>('#sheet-palette')
-  const zoomOutButton = requireElement<HTMLButtonElement>('#zoom-out')
-  const zoomInButton = requireElement<HTMLButtonElement>('#zoom-in')
-  const zoomLevel = requireElement<HTMLElement>('#zoom-level')
+  const previewView = requireElement<HTMLElement>('#skin-preview-view')
   const previewCanvas = requireElement<HTMLCanvasElement>('#skin-preview')
   const previewTools = requireElement<HTMLElement>('#preview-tools')
   const previewOptions = requireElement<HTMLElement>('#preview-options')
@@ -139,7 +132,7 @@ export function createSkinMode(
   const manifestButton = requireElement<HTMLButtonElement>('#export-manifest')
 
   const paintPalette = createPalettePainter(paletteView, paletteCanvas)
-  const paintPreview = createSkinPreviewPainter(previewCanvas)
+  const paintPreview = createSkinPreviewPainter(previewView, previewCanvas)
 
   const stored = decodeStoredSkin(readStoredText('skin'))
 
@@ -149,7 +142,6 @@ export function createSkinMode(
   let selectedTileIndex = UNBOUND
   // View settings, not part of the skin, so none of them is stored with the
   // draft — the same deal the level panel's selected brush gets.
-  let paletteZoom = 1
   let previewTool: PreviewTool = 'bind'
   // What the place tool writes. Each cell keeps its own copy, so changing this
   // affects the next placement and never one already made — those are the swap
@@ -169,6 +161,27 @@ export function createSkinMode(
   let savedDraft: SkinDraft = draft
   let savedSheetDataUrl: string | null = sheetDataUrl
   let storageNote: string | null = null
+
+  // Two of them, because the panel has two things to look closely at: the sheet
+  // the tiles are picked from, and the level they are being put on.
+  const paletteZoom = createZoomControl({
+    view: paletteView,
+    content: paletteCanvas,
+    outButton: requireElement<HTMLButtonElement>('#zoom-out'),
+    inButton: requireElement<HTMLButtonElement>('#zoom-in'),
+    readout: requireElement<HTMLElement>('#zoom-level'),
+    isEnabled: () => sheetImage !== null,
+    repaint: () => update(),
+  })
+
+  const previewZoom = createZoomControl({
+    view: previewView,
+    content: previewCanvas,
+    outButton: requireElement<HTMLButtonElement>('#preview-zoom-out'),
+    inButton: requireElement<HTMLButtonElement>('#preview-zoom-in'),
+    readout: requireElement<HTMLElement>('#preview-zoom-level'),
+    repaint: () => update(),
+  })
 
   syncSheetInputs()
 
@@ -380,19 +393,12 @@ export function createSkinMode(
     }
   }
 
-  function renderZoomControls(): void {
-    zoomLevel.textContent = paletteZoom === 1 ? 'fit' : `${paletteZoom}×`
-    zoomOutButton.disabled =
-      sheetImage === null || paletteZoom === ZOOM_STEPS[0]
-    zoomInButton.disabled =
-      sheetImage === null || paletteZoom === ZOOM_STEPS[ZOOM_STEPS.length - 1]
-  }
-
   function paintPreviewOnly(): void {
     paintPreview(session.current(), draft, sheetImage, {
       showSkinTiles,
       showCustomTiles,
       hoverPosition,
+      zoom: previewZoom.current(),
     })
   }
 
@@ -406,10 +412,11 @@ export function createSkinMode(
       draft.sheet,
       draft.isPixelated,
       selectedTileIndex,
-      paletteZoom,
+      paletteZoom.current(),
     )
     renderToolControls()
-    renderZoomControls()
+    paletteZoom.syncControls()
+    previewZoom.syncControls()
     paintPreviewOnly()
     renderReport()
     renderCustomTileReport()
@@ -439,34 +446,6 @@ export function createSkinMode(
 
     draft = bindRole(draft, role, selectedTileIndex)
     update()
-  }
-
-  /**
-   * Steps the zoom, keeping whatever was in the middle of the view in the
-   * middle of it — zooming in on a corner of a big sheet otherwise lands
-   * somewhere else entirely. The browser clamps the scroll offsets for us.
-   */
-  function zoomBy(steps: number): void {
-    const next = ZOOM_STEPS[ZOOM_STEPS.indexOf(paletteZoom) + steps]
-
-    if (next === undefined) {
-      return
-    }
-
-    const anchorX =
-      (paletteView.scrollLeft + paletteView.clientWidth / 2) /
-      Math.max(paletteCanvas.clientWidth, 1)
-    const anchorY =
-      (paletteView.scrollTop + paletteView.clientHeight / 2) /
-      Math.max(paletteCanvas.clientHeight, 1)
-
-    paletteZoom = next
-    update()
-
-    paletteView.scrollLeft =
-      anchorX * paletteCanvas.clientWidth - paletteView.clientWidth / 2
-    paletteView.scrollTop =
-      anchorY * paletteCanvas.clientHeight - paletteView.clientHeight / 2
   }
 
   async function loadSheet(file: File): Promise<void> {
@@ -520,7 +499,8 @@ export function createSkinMode(
     sheetImage = null
     sheetDataUrl = null
     selectedTileIndex = UNBOUND
-    paletteZoom = 1
+    paletteZoom.reset()
+    previewZoom.reset()
     previewTool = 'bind'
     placeMode = 'onTop'
     showSkinTiles = true
@@ -626,7 +606,7 @@ export function createSkinMode(
       sheetImage.height,
       paletteView.clientWidth,
       paletteView.clientHeight,
-      paletteZoom,
+      paletteZoom.current(),
     )
     const tileIndex = getTileIndexAtPixel(
       draft.sheet,
@@ -644,40 +624,16 @@ export function createSkinMode(
     update()
   })
 
-  zoomOutButton.addEventListener('click', () => {
-    zoomBy(-1)
-  })
-
-  zoomInButton.addEventListener('click', () => {
-    zoomBy(1)
-  })
-
-  // A plain wheel scrolls the zoomed sheet, as it does anywhere else; the
-  // modifier is what the browser's own page zoom uses, so it is the gesture
-  // already in people's hands.
-  paletteView.addEventListener(
-    'wheel',
-    (event) => {
-      if (!event.ctrlKey && !event.metaKey) {
-        return
-      }
-
-      event.preventDefault()
-
-      if (event.deltaY !== 0) {
-        zoomBy(event.deltaY < 0 ? 1 : -1)
-      }
-    },
-    { passive: false },
-  )
-
   function getPositionFromPointer(event: PointerEvent): number {
     const editorDocument = session.current()
+    // The bounds are the canvas's and the layout is the view's; see level
+    // mode's twin of this function.
     const bounds = previewCanvas.getBoundingClientRect()
     const layout = computeGridLayout(
       editorDocument,
-      previewCanvas.clientWidth,
-      previewCanvas.clientHeight,
+      previewView.clientWidth,
+      previewView.clientHeight,
+      previewZoom.current(),
     )
 
     return getPositionAtPixel(

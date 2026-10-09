@@ -14,8 +14,8 @@ src/render/     canvas.ts, colors.ts, tile-roles.ts,    (state) => draw
                 sheet.ts, skin.ts, custom-tiles.ts
 src/editor/     document.ts, xsb.ts, validate.ts,       level mode, same pure/shell/draw split
                 session.ts, layout.ts, canvas.ts,       plus autosave:
-                level-mode.ts, dom.ts, index.ts,        stored-state.ts, autosave.ts,
-                publish.ts                              storage.ts — and the export to levels/
+                level-mode.ts, dom.ts, zoom.ts,         stored-state.ts, autosave.ts,
+                index.ts, publish.ts                    storage.ts — and the export to levels/
 src/editor/skin/ skin.ts, roles.ts, atlas.ts,           skin mode
                  custom-tiles.ts, palette.ts,
                  palette-layout.ts, preview.ts
@@ -384,9 +384,9 @@ layout.ts │  stored-state.ts │            pure
       │        │   ↑         │
       │        │ autosave.ts │            the level slice, for both modes
       │        │   │         │
-    canvas.ts  │  storage.ts │            the only localStorage, a leaf
-        └──────┴─────┴───────┴→ the DOM: level-mode.ts, skin-mode.ts,
-                                publish.ts, index.ts
+    canvas.ts  zoom.ts  │  storage.ts │   localStorage and the zoom: leaves
+        └─────────┴─────┴──────┴──────┴→ the DOM: level-mode.ts, skin-mode.ts,
+                                         publish.ts, index.ts
 ```
 
 | File              | Role                                                                                                                                            |
@@ -397,8 +397,9 @@ layout.ts │  stored-state.ts │            pure
 | `stored-state.ts` | encode / decode of what autosave keeps, for both modes. Pure                                                                                    |
 | `session.ts`      | the undo stack, the editor's one mutable value. No DOM                                                                                          |
 | `autosave.ts`     | the `level` slice: what the editor opens on, and the write both modes share                                                                     |
-| `layout.ts`       | tile size, origin, and pixel → cell. Pure                                                                                                       |
-| `canvas.ts`       | `(document, hoverPosition) => draw`. No logic                                                                                                   |
+| `layout.ts`       | tile size, origin, the canvas size a zoom needs, and pixel → cell. Pure                                                                         |
+| `canvas.ts`       | `(document, hoverPosition, zoom) => draw`. No logic                                                                                             |
+| `zoom.ts`         | the zoom shared by the three scrolling views: two buttons, ctrl + wheel, scroll anchoring. Imports nothing                                      |
 | `storage.ts`      | the three `localStorage` keys, every call guarded. Imports nothing                                                                              |
 | `publish.ts`      | the Export to levels/ panel: gate on `validateDocument`, then post the bundle                                                                   |
 | `index.ts`        | the mode switch, Clear storage, and the keys and resizes each mode gets                                                                         |
@@ -553,11 +554,13 @@ A wall with no floor around it is not drawn at all, exactly as in the game — n
 
 `preview.ts` falls back to the procedural palette for anything unbound, so the preview is always readable and what is still missing shows as a flat block rather than a hole.
 
-### The palette zooms by growing its canvas, not by transforming it
+### Zooming grows the canvas, it does not transform it
 
 `computeSheetLayout` takes a zoom that multiplies the fit-to-view scale and reports the canvas size that holds the result. The canvas is sized to that and sits in a scroll container, so panning is the browser's and the pointer handler keeps inverting one scale and origin rather than a second transform on top. Zoom being a multiple of the fit also caps the canvas at the view's size times the zoom, whatever the sheet's dimensions, so a large tileset cannot zoom its way into an allocation the browser refuses.
 
-It is a view setting rather than skin data, so it is not stored with the draft.
+`computeGridLayout` does the same for the board, so a large level can be worked on close up in either panel — level mode's grid and skin mode's preview each sit in their own scroll container. Three views, one gesture: `editor/zoom.ts` owns the step, the two buttons, ctrl + wheel and the scroll anchoring, and leaves sizing the canvas to whichever painter it belongs to.
+
+A zoom is a view setting rather than data: none of the three is stored with the skin or the level, and each resets to fit when the editor is cleared.
 
 ### One vocabulary for every sheet, including our own output
 
@@ -623,7 +626,7 @@ Vitest is pinned to 2.x because 3+ requires Vite 6, and this project is on Vite 
 
 The suite is checked against deliberate regressions, not just written: dropping the bounds check in `getNextPosition`, ignoring what is behind a pushed box, replacing the flood fill with the raw open map, making `isSolved` vacuous, and letting undo run past the start each fail at least one test.
 
-The editor's pure modules are tested the same way, with XSB as the language in both directions — `parseXsbToDocument` in, `formatDocumentAsXsb` out, so a brush test is two boards. The custom tiles are the exception, because XSB cannot spell them: those assertions read the map. `layout.ts` and `canvas.ts` are untested: one is three lines of arithmetic the pointer handler and the renderer share, the other is drawing.
+The editor's pure modules are tested the same way, with XSB as the language in both directions — `parseXsbToDocument` in, `formatDocumentAsXsb` out, so a brush test is two boards. The custom tiles are the exception, because XSB cannot spell them: those assertions read the map. `layout.ts`, `canvas.ts` and `zoom.ts` are untested: the first is the arithmetic the pointer handler and the renderer share — a few lines, and `palette-layout.test.ts` covers the same shape for the sheet — the second is drawing, and the third is two buttons and a scroll offset.
 
 `render/skin.test.ts` covers the seam between the editor's output and the game's input: that a manifest resolves to the columns the atlas was packed with, that an unbound wall piece falls back to the wall fill, that an unrecognised role still consumes its column, and that a column past the ones `roles` names still cuts. The atlas it tests against is two numbers, because its size is all a skin reads off the image.
 

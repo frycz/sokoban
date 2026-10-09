@@ -50,9 +50,16 @@
       aside {
         overflow-y: auto;
       }
-      canvas.board {
+      /* The board canvas is sized to the zoomed level and this box scrolls it,
+         so zooming in pans with the browser's own scrollbars — the same deal
+         the sheet palette gets below. */
+      .board-view {
         flex: 1 1 auto;
         min-height: 0;
+        overflow: auto;
+      }
+      canvas.board {
+        display: block;
         touch-action: none;
         cursor: crosshair;
       }
@@ -86,11 +93,19 @@
         color: #7d8699;
         font-size: 12px;
       }
-      #zoom-level {
+      .zoom-level {
         min-width: 3em;
         text-align: center;
         color: #7d8699;
         font-size: 12px;
+      }
+      /* Pushed to the end of its row: it changes how the board is looked at,
+         not what is in it. */
+      .zoom {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-left: auto;
       }
       h2 {
         margin: 0;
@@ -305,7 +320,9 @@
             <span class="swatch" style="background: #63a8e0"></span>5 player
           </button>
         </div>
-        <canvas class="board" id="grid"></canvas>
+        <div class="board-view" id="grid-view">
+          <canvas class="board" id="grid"></canvas>
+        </div>
         <div class="row">
           <label for="width">w</label>
           <input id="width" type="number" />
@@ -313,6 +330,18 @@
           <input id="height" type="number" />
           <button type="button" id="new">New</button>
           <button type="button" id="undo">Undo (Z)</button>
+          <span class="zoom">
+            <span>zoom</span>
+            <button type="button" id="grid-zoom-out" title="Zoom out">−</button>
+            <span class="zoom-level" id="grid-zoom-level">fit</span>
+            <button
+              type="button"
+              id="grid-zoom-in"
+              title="Zoom in (or ctrl + wheel)"
+            >
+              +
+            </button>
+          </span>
         </div>
       </main>
       <aside>
@@ -391,7 +420,25 @@
             </label>
           </span>
         </div>
-        <canvas class="board" id="skin-preview"></canvas>
+        <div class="board-view" id="skin-preview-view">
+          <canvas class="board" id="skin-preview"></canvas>
+        </div>
+        <div class="row">
+          <span class="zoom">
+            <span>zoom</span>
+            <button type="button" id="preview-zoom-out" title="Zoom out">
+              −
+            </button>
+            <span class="zoom-level" id="preview-zoom-level">fit</span>
+            <button
+              type="button"
+              id="preview-zoom-in"
+              title="Zoom in (or ctrl + wheel)"
+            >
+              +
+            </button>
+          </span>
+        </div>
       </main>
       <aside>
         <h2>Tile sheet</h2>
@@ -418,7 +465,7 @@
           </label>
           <span>zoom</span>
           <button type="button" id="zoom-out" title="Zoom out">−</button>
-          <span id="zoom-level">fit</span>
+          <span class="zoom-level" id="zoom-level">fit</span>
           <button type="button" id="zoom-in" title="Zoom in (or ctrl + wheel)">
             +
           </button>
