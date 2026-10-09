@@ -74,6 +74,18 @@ export function readDataUrlAsImageBitmap(
 }
 
 /**
+ * Enter commits a colour field. A text input fires `change` on Enter only when
+ * it is inside a form, and none of the editor's are, so Enter blurs it instead
+ * — which is the gesture that squares a half-typed hex up with the value it was
+ * editing, and is what leaving the field means anyway.
+ */
+export function commitFieldOnEnter(event: KeyboardEvent): void {
+  if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
+    event.target.blur()
+  }
+}
+
+/**
  * A hex onto the system clipboard, so it can be pasted into the other panel's
  * colour field — or out of the editor entirely, into the art program the sheet
  * came from, which is half of what a palette is for.

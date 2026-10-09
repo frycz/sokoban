@@ -388,11 +388,30 @@
         flex-direction: column;
         gap: 4px;
       }
+      /* Two lines for a bound role: the tile it is, then the colour it is
+         painted with. The first line is already a thumbnail, a label as long as
+         "corner bottom-right" and a tile index inside 320px, so the ink does not
+         fit beside it. */
       #role-list .role-row {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      #role-list .role-line {
         display: flex;
         gap: 4px;
       }
-      #role-list .role-row > button[data-role] {
+      /* Indented under its tile, and quieter than it: the colour is a property
+         of the row above, not a row of its own. */
+      #role-list .ink-line {
+        margin-left: 12px;
+      }
+      #role-list .ink-line input.hex {
+        flex: 1 1 auto;
+        font-size: 12px;
+        padding: 3px 6px;
+      }
+      #role-list .role-line > button[data-role] {
         display: flex;
         align-items: center;
         gap: 8px;

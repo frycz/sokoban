@@ -571,9 +571,21 @@ That is also why palettes are not on the undo stack. The stack is the document's
 
 #### A colour field is never written to while it is focused
 
-The ink, the ground and the palette picker are each two controls over one value — a swatch and a hex field — and both have to follow the other. The trap is the redraw: typing `#1a1c2c` passes through `1a1`, which is a valid shorthand, so the live edit commits `#11aa11` and the redraw would write that back over the three characters typed so far. So every write-back is guarded on `document.activeElement`, and the field is squared up with the value it is editing on `change`, when the author has left it.
+There are four of them — the ink, the ground, the colours panel's picker, and one per bound role in the skin sidebar — and each is two controls over one value: a swatch and a hex field, each following the other. The trap is the redraw: typing `#1a1c2c` passes through `1a1`, which is a valid shorthand, so the live edit commits `#11aa11` and the redraw would write that back over the three characters typed so far, leaving the author typing into the middle of a colour they did not choose.
+
+So no write-back touches a focused field. The three standalone ones guard on `document.activeElement`; the role fields cannot, because `renderRoleList` rebuilds all fourteen rows from scratch on every redraw and the element itself is replaced — so the one being typed in is carried across, text and caret and focus together, and the rest are drawn from the draft as usual. Rebuilding is still the right call there: reconciling fourteen rows to keep one caret would be much more machinery than remembering where it was.
+
+A field squares up with the value it was editing on `change`, which is written explicitly at each of them rather than left to the redraw — `change` also fires on Enter, which does not blur, and the redraw's job is the opposite one. Enter itself is wired to blur the field (`commitFieldOnEnter`), because a text input fires `change` on Enter only inside a form and none of the editor's are.
 
 The ground's live edits coalesce into one undo entry per visit, from either control — `isEditingGround` is opened by the first edit and closed by the picker's `change` or the field's. Without it, typing a hex would push one undo entry per keystroke that happened to parse.
+
+#### A role's colour is pasted onto it, not stamped from the ink
+
+Each bound role carries a second line under its tile: the current ink as a stamp, its own colour as a hex field, and that hex to copy out. The hex field is the short way round from a palette — copy there, paste here — with no trip through the ink picker and no second click.
+
+It is a second line because the first is already a thumbnail, a label as long as "corner bottom-right" and a tile index inside a 320px sidebar. Pasting sets the colour and leaves the mode alone, because the mode is a fact about the art rather than about the colour: a flat-inked stencil stays flat when it is recoloured. The stamp button is still how a mode changes, since it carries the whole ink.
+
+The hex is deliberately _not_ spelled in its own colour, unlike the glyph beside it. Half of any palette is darker than the panel, and a hex written in its own colour is a hex that cannot be read; the glyph can afford to be dark because it is a shape, not a word.
 
 ## `editor/skin/` — binds sprites to roles, exports an atlas
 

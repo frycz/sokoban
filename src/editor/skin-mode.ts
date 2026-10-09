@@ -5,6 +5,7 @@ import type { ColorPaletteLibraryStore } from './color-palette-library'
 import { resolveColorPalette } from './color-palettes'
 import { NO_GROUND_COLOR } from './document'
 import {
+  commitFieldOnEnter,
   copyTextToClipboard,
   requireElement,
   downloadBlob,
@@ -349,10 +350,81 @@ export function createSkinMode(
     )
   }
 
+  /**
+   * The ink line a bound role gets under its tile: the current ink as a stamp,
+   * the role's own colour as a hex to paste into, and that hex to copy out.
+   *
+   * A second line rather than three more things on the first, because the first
+   * is already a thumbnail, a label as long as "corner bottom-right" and a tile
+   * index inside 320 pixels. What it buys is the short way round from a palette
+   * — copy there, paste here — without a trip through the ink picker and a
+   * second click to stamp it.
+   */
+  function createRoleInkLine(role: TileRole): HTMLElement {
+    const roleTint = draft.tints[role]
+    const line = document.createElement('div')
+    line.className = 'role-line ink-line'
+
+    // The glyph says the mode and its colour says the colour, so the row reads
+    // its own ink at a glance — white and round is no ink, which is what most
+    // rows are.
+    const applyInk = document.createElement('button')
+    applyInk.type = 'button'
+    applyInk.className = 'ink'
+    applyInk.dataset.ink = role
+    applyInk.title = `Paint ${ROLE_LABELS[role]} with the current ink, mode and all`
+    applyInk.style.color = roleTint.color
+    applyInk.textContent = roleTint.mode === 'flat' ? '◆' : '●'
+
+    const hex = document.createElement('input')
+    hex.type = 'text'
+    hex.className = 'hex'
+    hex.spellcheck = false
+    hex.dataset.roleHex = role
+    hex.value = roleTint.color
+    // Deliberately not inked: half a palette is darker than this background, and
+    // a hex spelled in its own colour is a hex that cannot be read. The glyph
+    // beside it carries the colour, where being dark costs nothing.
+    hex.setAttribute('aria-label', `${ROLE_LABELS[role]} hex`)
+    hex.title = `Paste or type a hex to colour ${ROLE_LABELS[role]}`
+
+    const copy = document.createElement('button')
+    copy.type = 'button'
+    copy.className = 'swatch-action'
+    copy.dataset.roleCopy = role
+    copy.title = `Copy ${ROLE_LABELS[role]}'s hex`
+    copy.textContent = '⧉'
+
+    line.append(applyInk, hex, copy)
+
+    return line
+  }
+
+  /**
+   * Rebuilt from scratch on every redraw, which would take the caret out of a
+   * hex field mid-paste — so the field being typed in is put back as it was.
+   * That is cheaper than reconciling fourteen rows, and a hex field is the only
+   * thing in the list that can hold a caret.
+   *
+   * Its text is carried across rather than redrawn from the role, because the
+   * two legitimately disagree while it is being typed: `#b13` is a valid
+   * shorthand, so it commits `#bb1133` on the way past, and redrawing the field
+   * from the role would replace the three characters typed so far with seven.
+   * The field squares up with the role when the author leaves it.
+   */
   function renderRoleList(): void {
     const grid = sheetImage
       ? getSheetGrid(draft.sheet, sheetImage.width, sheetImage.height)
       : null
+    const focused = document.activeElement
+    const typing =
+      focused instanceof HTMLInputElement && focused.dataset.roleHex
+        ? {
+            role: focused.dataset.roleHex,
+            text: focused.value,
+            caret: focused.selectionStart,
+          }
+        : null
 
     roleList.replaceChildren()
 
@@ -366,6 +438,9 @@ export function createSkinMode(
         const tileIndex = draft.bindings[role]
         const row = document.createElement('div')
         row.className = 'role-row'
+
+        const tileLine = document.createElement('div')
+        tileLine.className = 'role-line'
 
         const button = document.createElement('button')
         button.type = 'button'
@@ -395,34 +470,47 @@ export function createSkinMode(
         bound.textContent = tileIndex === UNBOUND ? 'unbound' : `#${tileIndex}`
 
         button.append(thumbnail, label, bound)
-        row.append(button)
+        tileLine.append(button)
 
+        // Only on a bound role, both of them: an ink with no tile to paint is
+        // nothing to click, and there is nothing to unbind either.
         if (isRoleBound(draft, role)) {
-          // The glyph says the mode and its colour says the colour, so the row
-          // reads its own ink at a glance — white and round is no ink, which is
-          // what most rows are. Only on a bound role: an ink with no tile to
-          // paint is nothing to click.
-          const roleTint = draft.tints[role]
-          const applyInk = document.createElement('button')
-          applyInk.type = 'button'
-          applyInk.className = 'ink'
-          applyInk.dataset.ink = role
-          applyInk.title = `Paint ${ROLE_LABELS[role]} with the current ink`
-          applyInk.style.color = roleTint.color
-          applyInk.textContent = roleTint.mode === 'flat' ? '◆' : '●'
-          row.append(applyInk)
-
           const clear = document.createElement('button')
           clear.type = 'button'
           clear.className = 'clear'
           clear.dataset.clear = role
           clear.title = `Unbind ${ROLE_LABELS[role]}`
           clear.textContent = '×'
-          row.append(clear)
+          tileLine.append(clear)
+        }
+
+        row.append(tileLine)
+
+        if (isRoleBound(draft, role)) {
+          row.append(createRoleInkLine(role))
         }
 
         roleList.append(row)
       }
+    }
+
+    if (typing === null) {
+      return
+    }
+
+    const restored = roleList.querySelector<HTMLInputElement>(
+      `input[data-role-hex="${typing.role}"]`,
+    )
+
+    if (!restored) {
+      return
+    }
+
+    restored.value = typing.text
+    restored.focus()
+
+    if (typing.caret !== null) {
+      restored.setSelectionRange(typing.caret, typing.caret)
     }
   }
 
@@ -1031,6 +1119,8 @@ export function createSkinMode(
     inkHexInput.value = ink.color
   })
 
+  inkHexInput.addEventListener('keydown', commitFieldOnEnter)
+
   inkCopyButton.addEventListener('click', () => copyHex(ink.color))
 
   /**
@@ -1085,11 +1175,15 @@ export function createSkinMode(
   })
 
   // One undo entry per visit, so the field's own gesture ends the stroke the
-  // way the picker's closing does.
+  // way the picker's closing does — and the field squares up with the ground,
+  // written here because `change` also fires on Enter, which does not blur and
+  // so would be refused by the guard in `renderGroundControls`.
   groundHexInput.addEventListener('change', () => {
     isEditingGround = false
-    renderGroundControls()
+    groundHexInput.value = session.current().groundColor ?? ''
   })
+
+  groundHexInput.addEventListener('keydown', commitFieldOnEnter)
 
   groundCopyButton.addEventListener('click', () => {
     const { groundColor } = session.current()
@@ -1151,8 +1245,67 @@ export function createSkinMode(
     update()
   })
 
+  /**
+   * A hex straight onto one role, which is the short way round from a palette:
+   * copy it there, paste it here, with no trip through the ink picker and no
+   * second click to stamp it.
+   *
+   * The role's mode is left alone — that is the tile's business, not the
+   * colour's, and a flat-inked stencil stays flat when it is recoloured. The
+   * stamp button beside it is still how a mode is changed, because it carries
+   * the whole ink.
+   */
+  roleList.addEventListener('input', (event) => {
+    const input = event.target
+
+    if (!(input instanceof HTMLInputElement) || !input.dataset.roleHex) {
+      return
+    }
+
+    const role = input.dataset.roleHex as TileRole
+    const color = parseHexColor(input.value)
+
+    if (color === null) {
+      return
+    }
+
+    draft = setRoleTint(draft, role, {
+      color,
+      mode: draft.tints[role].mode,
+    })
+    update()
+  })
+
+  // On the way out the field becomes the role's colour, so an abandoned
+  // half-hex does not sit there looking like what the tile is painted with.
+  // Written here rather than left to the redraw, because `change` also fires on
+  // Enter, which does not blur — and the redraw's job is to preserve the text of
+  // whatever still has the caret.
+  roleList.addEventListener('change', (event) => {
+    const input = event.target
+
+    if (!(input instanceof HTMLInputElement) || !input.dataset.roleHex) {
+      return
+    }
+
+    input.value = draft.tints[input.dataset.roleHex as TileRole].color
+    update()
+  })
+
+  roleList.addEventListener('keydown', commitFieldOnEnter)
+
   roleList.addEventListener('click', (event) => {
     const target = event.target as Element
+    const copied = target
+      .closest('button[data-role-copy]')
+      ?.getAttribute('data-role-copy')
+
+    if (copied) {
+      copyHex(draft.tints[copied as TileRole].color)
+
+      return
+    }
+
     const cleared = target
       .closest('button[data-clear]')
       ?.getAttribute('data-clear')

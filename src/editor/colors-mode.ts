@@ -11,7 +11,12 @@ import {
   resolveColorPalette,
   type ColorPalette,
 } from './color-palettes'
-import { copyTextToClipboard, requireElement, type EditorMode } from './dom'
+import {
+  commitFieldOnEnter,
+  copyTextToClipboard,
+  requireElement,
+  type EditorMode,
+} from './dom'
 import { formatHexColors, parseHexColor, parseHexColors } from './hex'
 import {
   readSwatchClick,
@@ -304,6 +309,8 @@ export function createColorsMode(store: ColorPaletteLibraryStore): EditorMode {
   hexInput.addEventListener('change', () => {
     hexInput.value = pickerInput.value
   })
+
+  hexInput.addEventListener('keydown', commitFieldOnEnter)
 
   addButton.addEventListener('click', () => {
     if (selectedPaletteId === null) {
