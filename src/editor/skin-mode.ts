@@ -32,6 +32,7 @@ import {
 import { createPalettePainter } from './skin/palette'
 import { createSkinPreviewPainter } from './skin/preview'
 import { ROLE_LABELS, getTopRoleAtPosition, type TileRole } from './skin/roles'
+import { ROLE_COLOR_KEYS, parseRoleColors } from './skin/role-colors'
 import { getSheetGrid, getSourceTileRect } from '../render/sheet'
 import { computeSheetLayout, getTileIndexAtPixel } from './skin/palette-layout'
 import {
@@ -171,6 +172,23 @@ export function createSkinMode(
   const paletteReport = requireElement<HTMLElement>('#skin-palette-report')
   const atlasButton = requireElement<HTMLButtonElement>('#export-atlas')
   const manifestButton = requireElement<HTMLButtonElement>('#export-manifest')
+  const roleColorsImportButton = requireElement<HTMLButtonElement>(
+    '#role-colors-import',
+  )
+  const roleColorsHelpButton =
+    requireElement<HTMLButtonElement>('#role-colors-help')
+  const roleColorsDialog = requireElement<HTMLDialogElement>(
+    '#role-colors-dialog',
+  )
+  const roleColorsText =
+    requireElement<HTMLTextAreaElement>('#role-colors-text')
+  const roleColorsReport = requireElement<HTMLElement>('#role-colors-report')
+  const roleColorsApplyButton =
+    requireElement<HTMLButtonElement>('#role-colors-apply')
+  const roleColorsHelpDialog = requireElement<HTMLDialogElement>(
+    '#role-colors-help-dialog',
+  )
+  const roleColorsKeys = requireElement<HTMLTableElement>('#role-colors-keys')
 
   const getTintedTile = createTintedTileCache()
   const paintPalette = createPalettePainter(paletteView, paletteCanvas)
@@ -1332,6 +1350,103 @@ export function createSkinMode(
       assign(role as TileRole)
     }
   })
+
+  function addRoleColorsMessage(message: string, className: string): void {
+    const line = document.createElement('p')
+    line.className = className
+    line.textContent = message
+    roleColorsReport.append(line)
+  }
+
+  roleColorsImportButton.addEventListener('click', () => {
+    roleColorsReport.replaceChildren()
+    roleColorsDialog.showModal()
+    roleColorsText.focus()
+  })
+
+  /**
+   * Every named role that is bound takes the colour and keeps its mode — the
+   * same deal as typing into its hex field. An unbound role is skipped rather
+   * than tinted, because binding stamps the current ink over whatever it had.
+   *
+   * A clean import closes the dialog; anything skipped keeps it open with the
+   * reasons, so the author sees what did not land and can fix the text.
+   */
+  roleColorsApplyButton.addEventListener('click', () => {
+    roleColorsReport.replaceChildren()
+
+    const parsed = parseRoleColors(roleColorsText.value)
+
+    if (parsed === null) {
+      addRoleColorsMessage('That is not a JSON object.', 'error')
+
+      return
+    }
+
+    const unbound: TileRole[] = []
+    let applied = 0
+
+    for (const [role, color] of parsed.colors) {
+      if (!isRoleBound(draft, role)) {
+        unbound.push(role)
+        continue
+      }
+
+      draft = setRoleTint(draft, role, { color, mode: draft.tints[role].mode })
+      applied += 1
+    }
+
+    update()
+
+    if (
+      parsed.unknownKeys.length === 0 &&
+      parsed.invalidKeys.length === 0 &&
+      unbound.length === 0 &&
+      applied > 0
+    ) {
+      roleColorsDialog.close()
+
+      return
+    }
+
+    addRoleColorsMessage(
+      `Recoloured ${applied} ${applied === 1 ? 'role' : 'roles'}.`,
+      applied === 0 ? 'warning' : 'ok',
+    )
+
+    if (unbound.length > 0) {
+      addRoleColorsMessage(
+        `Skipped, not bound: ${unbound.map((role) => ROLE_LABELS[role]).join(', ')}.`,
+        'warning',
+      )
+    }
+
+    if (parsed.invalidKeys.length > 0) {
+      addRoleColorsMessage(
+        `Not a hex: ${parsed.invalidKeys.join(', ')}.`,
+        'error',
+      )
+    }
+
+    if (parsed.unknownKeys.length > 0) {
+      addRoleColorsMessage(
+        `Unknown keys: ${parsed.unknownKeys.join(', ')}.`,
+        'error',
+      )
+    }
+  })
+
+  // Built from the parser's own table, so the help cannot list a key the
+  // import does not take.
+  for (const { role, keys } of ROLE_COLOR_KEYS) {
+    const row = roleColorsKeys.insertRow()
+    row.insertCell().textContent = keys.join(', ')
+    row.insertCell().textContent = ROLE_LABELS[role]
+  }
+
+  roleColorsHelpButton.addEventListener('click', () =>
+    roleColorsHelpDialog.showModal(),
+  )
 
   /**
    * Which atlas column each hand-placed cell takes. Worked out from the sheet

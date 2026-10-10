@@ -9,10 +9,6 @@
     "floor",
     "goal",
     "wall",
-    "wallTop",
-    "wallRight",
-    "wallBottom",
-    "wallLeft",
     "box",
     "boxOnGoal",
     "player"

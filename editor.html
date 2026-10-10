@@ -460,6 +460,47 @@
         color: #7d8699;
         font-size: 12px;
       }
+      /* The modals: one panel over a dimmed editor, sized to the sidebar's
+         idea of a comfortable line rather than to the window. */
+      dialog {
+        width: min(32em, calc(100vw - 32px));
+        max-height: calc(100vh - 32px);
+        box-sizing: border-box;
+        padding: 16px;
+        color: inherit;
+        background: #11131a;
+        border: 1px solid #2c3444;
+        border-radius: 6px;
+      }
+      dialog::backdrop {
+        background: rgb(0 0 0 / 0.6);
+      }
+      dialog form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      dialog p {
+        margin: 0;
+      }
+      dialog pre {
+        margin: 0;
+        padding: 8px;
+        background: #0c0e14;
+        border: 1px solid #2c3444;
+        border-radius: 4px;
+        overflow-x: auto;
+      }
+      #role-colors-keys {
+        border-collapse: collapse;
+      }
+      #role-colors-keys td {
+        padding: 2px 12px 2px 0;
+        vertical-align: top;
+      }
+      #role-colors-keys td:last-child {
+        color: #7d8699;
+      }
       @media (max-width: 760px) {
         section.mode {
           grid-template-columns: minmax(0, 1fr);
@@ -728,6 +769,22 @@
         <div class="swatches" id="skin-palette-swatches"></div>
 
         <h2>Roles</h2>
+        <div class="row">
+          <button
+            type="button"
+            id="role-colors-import"
+            title="Paste a JSON object of role names to hexes and recolour every bound role it names"
+          >
+            Import colors from JSON
+          </button>
+          <button
+            type="button"
+            id="role-colors-help"
+            title="Which keys the JSON can use"
+          >
+            Show help
+          </button>
+        </div>
         <div class="report" id="skin-report"></div>
         <div id="role-list"></div>
 
@@ -831,6 +888,53 @@
         </div>
       </aside>
     </section>
+
+    <dialog id="role-colors-dialog" aria-labelledby="role-colors-title">
+      <form method="dialog">
+        <h2 id="role-colors-title">Import colors from JSON</h2>
+        <textarea
+          id="role-colors-text"
+          spellcheck="false"
+          placeholder='{ "floor": "#1a1c2c", "goal": "#ffcd75", "boxPlaced": "#38b764" }'
+        ></textarea>
+        <div class="report" id="role-colors-report"></div>
+        <div class="row">
+          <button type="button" id="role-colors-apply">Apply</button>
+          <button type="submit" value="cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog
+      id="role-colors-help-dialog"
+      aria-labelledby="role-colors-help-title"
+    >
+      <form method="dialog">
+        <h2 id="role-colors-help-title">Role colours JSON</h2>
+        <p>
+          One JSON object. Each key names a role, each value is its hex —
+          <code>#rrggbb</code>, <code>#rgb</code> or without the <code>#</code>.
+          Keys are case-insensitive; every key is optional.
+        </p>
+        <p>
+          Only bound roles are recoloured, and each keeps its ink mode. Unknown
+          keys and values that are not a hex are reported and skipped.
+        </p>
+        <table id="role-colors-keys"></table>
+        <pre>
+{
+  "floor": "#1a1c2c",
+  "goal": "#ffcd75",
+  "wall": "#333c57",
+  "box": "#a7f070",
+  "boxPlaced": "#38b764",
+  "player": "#ef7d57"
+}</pre>
+        <div class="row">
+          <button type="submit" value="close">Close</button>
+        </div>
+      </form>
+    </dialog>
 
     <script type="module" src="/src/editor/index.ts"></script>
   </body>
