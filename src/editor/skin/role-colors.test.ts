@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ROLE_COLOR_KEYS, parseRoleColors } from './role-colors'
+import { GROUND_KEY, ROLE_COLOR_KEYS, parseRoleColors } from './role-colors'
 
 describe('parseRoleColors', () => {
   it('reads role names and normalises every hex to #rrggbb', () => {
@@ -32,6 +32,17 @@ describe('parseRoleColors', () => {
     )
   })
 
+  it("reads ground apart from the roles, since it is the level's colour", () => {
+    const result = parseRoleColors('{ "Ground": "#000", "floor": "#111111" }')
+
+    expect(result?.ground).toBe('#000000')
+    expect(result?.colors).toEqual(new Map([['floor', '#111111']]))
+    expect(parseRoleColors('{ "floor": "#111111" }')?.ground).toBeNull()
+    expect(parseRoleColors('{ "ground": "nope" }')?.invalidKeys).toEqual([
+      'ground',
+    ])
+  })
+
   it('matches keys without regard to case', () => {
     expect(parseRoleColors('{ "BoxOnGoal": "#000000" }')?.colors).toEqual(
       new Map([['boxOnGoal', '#000000']]),
@@ -62,5 +73,6 @@ describe('ROLE_COLOR_KEYS', () => {
     )
 
     expect(new Set(keys).size).toBe(keys.length)
+    expect(keys).not.toContain(GROUND_KEY)
   })
 })

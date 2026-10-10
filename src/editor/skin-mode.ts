@@ -32,7 +32,11 @@ import {
 import { createPalettePainter } from './skin/palette'
 import { createSkinPreviewPainter } from './skin/preview'
 import { ROLE_LABELS, getTopRoleAtPosition, type TileRole } from './skin/roles'
-import { ROLE_COLOR_KEYS, parseRoleColors } from './skin/role-colors'
+import {
+  GROUND_KEY,
+  ROLE_COLOR_KEYS,
+  parseRoleColors,
+} from './skin/role-colors'
 import { getSheetGrid, getSourceTileRect } from '../render/sheet'
 import { computeSheetLayout, getTileIndexAtPixel } from './skin/palette-layout'
 import {
@@ -1368,6 +1372,8 @@ export function createSkinMode(
    * Every named role that is bound takes the colour and keeps its mode — the
    * same deal as typing into its hex field. An unbound role is skipped rather
    * than tinted, because binding stamps the current ink over whatever it had.
+   * The ground is the level's, so it goes through the session as one undo
+   * entry of its own.
    *
    * A clean import closes the dialog; anything skipped keeps it open with the
    * reasons, so the author sees what did not land and can fix the text.
@@ -1396,6 +1402,13 @@ export function createSkinMode(
       applied += 1
     }
 
+    if (parsed.ground !== null) {
+      session.beginStroke()
+      session.setGroundColor(parsed.ground)
+      isEditingGround = false
+      applied += 1
+    }
+
     update()
 
     if (
@@ -1410,7 +1423,7 @@ export function createSkinMode(
     }
 
     addRoleColorsMessage(
-      `Recoloured ${applied} ${applied === 1 ? 'role' : 'roles'}.`,
+      `Applied ${applied} ${applied === 1 ? 'colour' : 'colours'}.`,
       applied === 0 ? 'warning' : 'ok',
     )
 
@@ -1438,6 +1451,10 @@ export function createSkinMode(
 
   // Built from the parser's own table, so the help cannot list a key the
   // import does not take.
+  const groundRow = roleColorsKeys.insertRow()
+  groundRow.insertCell().textContent = GROUND_KEY
+  groundRow.insertCell().textContent = 'ground — behind the level'
+
   for (const { role, keys } of ROLE_COLOR_KEYS) {
     const row = roleColorsKeys.insertRow()
     row.insertCell().textContent = keys.join(', ')

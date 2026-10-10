@@ -30,6 +30,13 @@ export const ROLE_COLOR_KEYS: readonly {
   return { role, keys: alias === role ? [role] : [role, alias] }
 })
 
+/**
+ * The colour behind the level. Not a role — it belongs to the level, not the
+ * skin — but it is the other colour a palette is chosen for, so the import
+ * takes it beside them.
+ */
+export const GROUND_KEY = 'ground'
+
 const ROLE_BY_KEY: ReadonlyMap<string, TileRole> = new Map(
   ROLE_COLOR_KEYS.flatMap(({ role, keys }) =>
     keys.map((key) => [key.toLowerCase(), role] as const),
@@ -39,6 +46,8 @@ const ROLE_BY_KEY: ReadonlyMap<string, TileRole> = new Map(
 export type RoleColorImport = {
   /** In the order the keys appear; a role named twice keeps the last colour. */
   readonly colors: ReadonlyMap<TileRole, string>
+  /** `null` when the JSON has no readable `ground`. */
+  readonly ground: string | null
   /** Keys that name no role. */
   readonly unknownKeys: readonly string[]
   /** Keys that name a role but whose value is not a hex this program reads. */
@@ -67,16 +76,27 @@ export function parseRoleColors(text: string): RoleColorImport | null {
   const colors = new Map<TileRole, string>()
   const unknownKeys: string[] = []
   const invalidKeys: string[] = []
+  let ground: string | null = null
 
   for (const [key, entry] of Object.entries(value)) {
+    const color = typeof entry === 'string' ? parseHexColor(entry) : null
+
+    if (key.toLowerCase() === GROUND_KEY) {
+      if (color === null) {
+        invalidKeys.push(key)
+      } else {
+        ground = color
+      }
+
+      continue
+    }
+
     const role = ROLE_BY_KEY.get(key.toLowerCase())
 
     if (role === undefined) {
       unknownKeys.push(key)
       continue
     }
-
-    const color = typeof entry === 'string' ? parseHexColor(entry) : null
 
     if (color === null) {
       invalidKeys.push(key)
@@ -86,5 +106,5 @@ export function parseRoleColors(text: string): RoleColorImport | null {
     colors.set(role, color)
   }
 
-  return { colors, unknownKeys, invalidKeys }
+  return { colors, ground, unknownKeys, invalidKeys }
 }
