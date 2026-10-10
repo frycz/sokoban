@@ -417,7 +417,27 @@ export function createSkinMode(
     copy.title = `Copy ${ROLE_LABELS[role]}'s hex`
     copy.textContent = '⧉'
 
-    line.append(applyInk, hex, copy)
+    // The fill behind the tile's transparent pixels. The square shows it, or
+    // is hollow when there is none; the field is empty for none, which is also
+    // how one is taken away.
+    const backgroundSwatch = document.createElement('span')
+    backgroundSwatch.className = 'background-swatch'
+    backgroundSwatch.textContent = roleTint.background === null ? '□' : '■'
+    backgroundSwatch.style.color = roleTint.background ?? ''
+    backgroundSwatch.title =
+      roleTint.background === null ? 'No background' : 'Background'
+
+    const background = document.createElement('input')
+    background.type = 'text'
+    background.className = 'hex background'
+    background.spellcheck = false
+    background.placeholder = 'no bg'
+    background.dataset.roleBackground = role
+    background.value = roleTint.background ?? ''
+    background.setAttribute('aria-label', `${ROLE_LABELS[role]} background hex`)
+    background.title = `A hex to fill ${ROLE_LABELS[role]}'s transparent pixels with, or empty for none`
+
+    line.append(applyInk, hex, copy, backgroundSwatch, background)
 
     return line
   }
@@ -439,10 +459,18 @@ export function createSkinMode(
       ? getSheetGrid(draft.sheet, sheetImage.width, sheetImage.height)
       : null
     const focused = document.activeElement
+    const typingSelector =
+      focused instanceof HTMLInputElement
+        ? focused.dataset.roleHex
+          ? `input[data-role-hex="${focused.dataset.roleHex}"]`
+          : focused.dataset.roleBackground
+            ? `input[data-role-background="${focused.dataset.roleBackground}"]`
+            : null
+        : null
     const typing =
-      focused instanceof HTMLInputElement && focused.dataset.roleHex
+      focused instanceof HTMLInputElement && typingSelector !== null
         ? {
-            role: focused.dataset.roleHex,
+            selector: typingSelector,
             text: focused.value,
             caret: focused.selectionStart,
           }
@@ -520,9 +548,7 @@ export function createSkinMode(
       return
     }
 
-    const restored = roleList.querySelector<HTMLInputElement>(
-      `input[data-role-hex="${typing.role}"]`,
-    )
+    const restored = roleList.querySelector<HTMLInputElement>(typing.selector)
 
     if (!restored) {
       return
@@ -793,8 +819,22 @@ export function createSkinMode(
       return
     }
 
-    draft = setRoleTint(bindRole(draft, role, selectedTileIndex), role, ink)
+    draft = setRoleTint(
+      bindRole(draft, role, selectedTileIndex),
+      role,
+      getInkFor(role),
+    )
     update()
+  }
+
+  /**
+   * The current ink as a role takes it: colour and mode from the ink, the
+   * background kept from the role. The ink has no background of its own — it is
+   * a property of the role's slot, set from its row, and a re-stamp or a rebind
+   * should not quietly throw it away.
+   */
+  function getInkFor(role: TileRole): Tint {
+    return { ...ink, background: draft.tints[role].background }
   }
 
   async function loadSheet(file: File): Promise<void> {
@@ -1291,10 +1331,31 @@ export function createSkinMode(
       return
     }
 
-    draft = setRoleTint(draft, role, {
-      color,
-      mode: draft.tints[role].mode,
-    })
+    draft = setRoleTint(draft, role, { ...draft.tints[role], color })
+    update()
+  })
+
+  /**
+   * The background behind a role's tile: a hex fills its transparent pixels,
+   * an empty field takes the fill away again. Anything else is a hex still
+   * being typed and changes nothing yet.
+   */
+  roleList.addEventListener('input', (event) => {
+    const input = event.target
+
+    if (!(input instanceof HTMLInputElement) || !input.dataset.roleBackground) {
+      return
+    }
+
+    const role = input.dataset.roleBackground as TileRole
+    const text = input.value.trim()
+    const background = text === '' ? null : parseHexColor(text)
+
+    if (text !== '' && background === null) {
+      return
+    }
+
+    draft = setRoleTint(draft, role, { ...draft.tints[role], background })
     update()
   })
 
@@ -1306,11 +1367,19 @@ export function createSkinMode(
   roleList.addEventListener('change', (event) => {
     const input = event.target
 
-    if (!(input instanceof HTMLInputElement) || !input.dataset.roleHex) {
+    if (!(input instanceof HTMLInputElement)) {
       return
     }
 
-    input.value = draft.tints[input.dataset.roleHex as TileRole].color
+    if (input.dataset.roleHex) {
+      input.value = draft.tints[input.dataset.roleHex as TileRole].color
+    } else if (input.dataset.roleBackground) {
+      input.value =
+        draft.tints[input.dataset.roleBackground as TileRole].background ?? ''
+    } else {
+      return
+    }
+
     update()
   })
 
@@ -1342,7 +1411,11 @@ export function createSkinMode(
     const inked = target.closest('button[data-ink]')?.getAttribute('data-ink')
 
     if (inked) {
-      draft = setRoleTint(draft, inked as TileRole, ink)
+      draft = setRoleTint(
+        draft,
+        inked as TileRole,
+        getInkFor(inked as TileRole),
+      )
       update()
 
       return
@@ -1398,7 +1471,7 @@ export function createSkinMode(
         continue
       }
 
-      draft = setRoleTint(draft, role, { color, mode: draft.tints[role].mode })
+      draft = setRoleTint(draft, role, { ...draft.tints[role], color })
       applied += 1
     }
 

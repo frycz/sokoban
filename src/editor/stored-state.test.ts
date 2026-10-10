@@ -22,7 +22,7 @@ import {
 } from './stored-state'
 import { formatDocumentAsXsb, parseXsbToDocument } from './xsb'
 
-const GREEN: Tint = { color: '#55aa33', mode: 'flat' }
+const GREEN: Tint = { color: '#55aa33', mode: 'flat', background: null }
 
 const SHEET = 'data:image/png;base64,AAAA'
 
@@ -166,7 +166,7 @@ describe('stored level', () => {
         {
           tileIndex: 4,
           mode: 'onTop',
-          tint: { color: '#abc123', mode: 'multiply' },
+          tint: { color: '#abc123', mode: 'multiply', background: null },
         },
       ],
       [2, { tileIndex: 4, mode: 'onTop', tint: NO_TINT }],

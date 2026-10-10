@@ -20,6 +20,12 @@ export type Tint = {
   /** `#rrggbb`, lowercase — the colour input's own format. */
   readonly color: string
   readonly mode: TintMode
+  /**
+   * `#rrggbb` painted under the tile, so its transparent pixels show this
+   * instead of whatever is drawn beneath — or `null` to leave them see-through.
+   * Baked into the atlas like the colour, so the game draws it for free.
+   */
+  readonly background: string | null
 }
 
 const WHITE = '#ffffff'
@@ -29,20 +35,30 @@ const WHITE = '#ffffff'
  * absence: nothing has an optional field to branch on, and a tile that was
  * never tinted is the same tile as one tinted back to white.
  */
-export const NO_TINT: Tint = { color: WHITE, mode: 'multiply' }
+export const NO_TINT: Tint = {
+  color: WHITE,
+  mode: 'multiply',
+  background: null,
+}
 
 /** Only `multiply` has a no-op: a flat white repaints a coloured tile white. */
 export function isIdentityTint(tint: Tint): boolean {
-  return tint.mode === 'multiply' && tint.color === WHITE
+  return (
+    tint.mode === 'multiply' && tint.color === WHITE && tint.background === null
+  )
 }
 
 export function isSameTint(tint: Tint, other: Tint): boolean {
-  return tint.color === other.color && tint.mode === other.mode
+  return (
+    tint.color === other.color &&
+    tint.mode === other.mode &&
+    tint.background === other.background
+  )
 }
 
 /** Two tiles share an atlas column only if this matches as well as the index. */
 export function getTintKey(tint: Tint): string {
-  return `${tint.mode}:${tint.color}`
+  return `${tint.mode}:${tint.color}:${tint.background ?? 'none'}`
 }
 
 /**
@@ -60,5 +76,6 @@ export function readTint(value: unknown): Tint {
   return {
     color: readHexColor(record.color) ?? WHITE,
     mode: record.mode === 'flat' ? 'flat' : 'multiply',
+    background: readHexColor(record.background),
   }
 }

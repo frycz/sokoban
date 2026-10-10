@@ -22,7 +22,7 @@ import {
   type SkinDraft,
 } from './skin'
 
-const GREEN: Tint = { color: '#55aa33', mode: 'flat' }
+const GREEN: Tint = { color: '#55aa33', mode: 'flat', background: null }
 
 function bindEverything(draft: SkinDraft): SkinDraft {
   return ROLE_ORDER.reduce(

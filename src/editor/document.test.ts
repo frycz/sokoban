@@ -20,7 +20,7 @@ import { formatDocumentAsXsb, parseXsbToDocument } from './xsb'
 
 const positionOf = (width: number, x: number, y: number) => y * width + x
 
-const GREEN: Tint = { color: '#55aa33', mode: 'flat' }
+const GREEN: Tint = { color: '#55aa33', mode: 'flat', background: null }
 
 describe('createEmptyDocument', () => {
   it('starts as solid wall, so drawing carves a room out', () => {

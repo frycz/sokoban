@@ -52,18 +52,24 @@ export function tintSheetTile(
     // which is precisely "repaint every pixel this tile has".
     context.globalCompositeOperation = 'source-in'
     context.fillRect(0, 0, rect.width, rect.height)
-
-    return canvas
+  } else {
+    // A blend mode still composites source-over, so an opaque fill would also
+    // paint the tile's transparent pixels the tint colour. Multiply first, then
+    // take the alpha back off the tile itself — which is why the source image is
+    // drawn twice, and why a mask stays a mask instead of becoming a block.
+    context.globalCompositeOperation = 'multiply'
+    context.fillRect(0, 0, rect.width, rect.height)
+    context.globalCompositeOperation = 'destination-in'
+    drawTile()
   }
 
-  // A blend mode still composites source-over, so an opaque fill would also
-  // paint the tile's transparent pixels the tint colour. Multiply first, then
-  // take the alpha back off the tile itself — which is why the source image is
-  // drawn twice, and why a mask stays a mask instead of becoming a block.
-  context.globalCompositeOperation = 'multiply'
-  context.fillRect(0, 0, rect.width, rect.height)
-  context.globalCompositeOperation = 'destination-in'
-  drawTile()
+  if (tint.background !== null) {
+    // Last, and underneath: `destination-over` only lands where the tinted tile
+    // is not already opaque, so the background fills the holes and nothing else.
+    context.globalCompositeOperation = 'destination-over'
+    context.fillStyle = tint.background
+    context.fillRect(0, 0, rect.width, rect.height)
+  }
 
   return canvas
 }

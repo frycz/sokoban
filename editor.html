@@ -411,6 +411,18 @@
         font-size: 12px;
         padding: 3px 6px;
       }
+      /* The colour and the background share the line, so neither field takes
+         it all. */
+      #role-list .ink-line input.hex {
+        width: 0;
+        min-width: 0;
+      }
+      #role-list .background-swatch {
+        flex: 0 0 auto;
+        align-self: center;
+        padding: 0 2px 0 6px;
+        color: #7d8699;
+      }
       #role-list .role-line > button[data-role] {
         display: flex;
         align-items: center;

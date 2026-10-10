@@ -16,7 +16,9 @@ import {
 describe('isIdentityTint', () => {
   it('is only multiply by white, which is the no-op', () => {
     expect(isIdentityTint(NO_TINT)).toBe(true)
-    expect(isIdentityTint({ color: '#ffffff', mode: 'multiply' })).toBe(true)
+    expect(
+      isIdentityTint({ color: '#ffffff', mode: 'multiply', background: null }),
+    ).toBe(true)
   })
 
   /**
@@ -24,11 +26,19 @@ describe('isIdentityTint', () => {
    * tile's shape, so on coloured art it is a repaint rather than nothing.
    */
   it('is not a flat white, which repaints coloured art', () => {
-    expect(isIdentityTint({ color: '#ffffff', mode: 'flat' })).toBe(false)
+    expect(
+      isIdentityTint({ color: '#ffffff', mode: 'flat', background: null }),
+    ).toBe(false)
+  })
+
+  it('is not white with a background, which fills the transparent pixels', () => {
+    expect(isIdentityTint({ ...NO_TINT, background: '#000000' })).toBe(false)
   })
 
   it('is not any other colour', () => {
-    expect(isIdentityTint({ color: '#fffffe', mode: 'multiply' })).toBe(false)
+    expect(
+      isIdentityTint({ color: '#fffffe', mode: 'multiply', background: null }),
+    ).toBe(false)
   })
 })
 
@@ -36,14 +46,23 @@ describe('getTintKey', () => {
   it('separates two inks that differ only in mode', () => {
     const color = '#55aa33'
 
-    expect(getTintKey({ color, mode: 'multiply' })).not.toBe(
-      getTintKey({ color, mode: 'flat' }),
+    expect(getTintKey({ color, mode: 'multiply', background: null })).not.toBe(
+      getTintKey({ color, mode: 'flat', background: null }),
     )
   })
 
+  it('separates two inks that differ only in background', () => {
+    const tint: Tint = { color: '#55aa33', mode: 'flat', background: null }
+
+    expect(getTintKey(tint)).not.toBe(
+      getTintKey({ ...tint, background: '#000000' }),
+    )
+    expect(isSameTint(tint, { ...tint, background: '#000000' })).toBe(false)
+  })
+
   it('is equal exactly when the tints are', () => {
-    const one: Tint = { color: '#55aa33', mode: 'flat' }
-    const other: Tint = { color: '#55aa33', mode: 'flat' }
+    const one: Tint = { color: '#55aa33', mode: 'flat', background: null }
+    const other: Tint = { color: '#55aa33', mode: 'flat', background: null }
 
     expect(getTintKey(one)).toBe(getTintKey(other))
     expect(isSameTint(one, other)).toBe(true)
@@ -55,7 +74,16 @@ describe('readTint', () => {
     expect(readTint({ color: '#ABC123', mode: 'flat' })).toEqual({
       color: '#abc123',
       mode: 'flat',
+      background: null,
     })
+  })
+
+  it('takes a background hex, and reads a missing one as none', () => {
+    expect(
+      readTint({ color: '#ffffff', mode: 'flat', background: '#00AA00' })
+        .background,
+    ).toBe('#00aa00')
+    expect(readTint({ color: '#ffffff', mode: 'flat' }).background).toBe(null)
   })
 
   it('falls back to no ink for a colour the canvas would not take', () => {
@@ -73,6 +101,7 @@ describe('readTint', () => {
     expect(readTint({ color: '#abc123', mode: 'underneath' })).toEqual({
       color: '#abc123',
       mode: 'multiply',
+      background: null,
     })
   })
 

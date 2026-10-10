@@ -10,8 +10,8 @@ import {
 } from './custom-tiles'
 import { bindRole, createEmptySkinDraft, type SkinDraft } from './skin'
 
-const GREEN: Tint = { color: '#55aa33', mode: 'flat' }
-const RED: Tint = { color: '#cc3322', mode: 'flat' }
+const GREEN: Tint = { color: '#55aa33', mode: 'flat', background: null }
+const RED: Tint = { color: '#cc3322', mode: 'flat', background: null }
 
 /** Six bound roles, so the custom columns start at 6. */
 const DRAFT: SkinDraft = (
@@ -182,7 +182,7 @@ describe('countTinted', () => {
             {
               tileIndex: 1,
               mode: 'onTop',
-              tint: { color: '#ffffff', mode: 'multiply' },
+              tint: { color: '#ffffff', mode: 'multiply', background: null },
             },
           ],
         ]),
@@ -200,7 +200,7 @@ describe('countTinted', () => {
             {
               tileIndex: 1,
               mode: 'onTop',
-              tint: { color: '#ffffff', mode: 'flat' },
+              tint: { color: '#ffffff', mode: 'flat', background: null },
             },
           ],
         ]),
