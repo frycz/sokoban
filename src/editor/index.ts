@@ -9,11 +9,21 @@ import { createLevelMode } from './level-mode'
 import { createPublishPanel } from './publish'
 import { createSession } from './session'
 import { createSkinMode } from './skin-mode'
-import { clearStoredEditor } from './storage'
+import { clearStoredEditor, readStoredText, writeStoredText } from './storage'
 
 const MODE_NAMES = ['level', 'skin', 'colors'] as const
 
 type ModeName = (typeof MODE_NAMES)[number]
+
+/**
+ * The mode is stored as its bare name: there is nothing else to it, and anything
+ * that is not one of the names — an older build, a hand edit — opens on level.
+ */
+function readStoredMode(): ModeName {
+  const stored = readStoredText('mode')
+
+  return MODE_NAMES.find((name) => name === stored) ?? 'level'
+}
 
 // The editor opens on whatever was last autosaved. The level is read here
 // because the session is built from it; the skin reads its own slice. Each mode
@@ -76,13 +86,21 @@ function activate(mode: ModeName): void {
   modes[mode].update()
 }
 
+// Written from the click rather than from `activate`, so opening the editor on
+// the stored mode does not write it straight back. A refused write costs only
+// the selection on the next reload, so it is not reported.
 for (const name of MODE_NAMES) {
-  buttons[name].addEventListener('click', () => activate(name))
+  buttons[name].addEventListener('click', () => {
+    activate(name)
+    writeStoredText('mode', name)
+  })
 }
 
 // Clearing storage without resetting the editor would be a lie: the next edit
 // autosaves and the state is back. So it does both, and asks first — the work
-// in the three panels is the only copy there is.
+// in the three panels is the only copy there is. The mode is the exception: it
+// stays where it is, because the view is not the work, and the next switch
+// stores it again.
 requireElement<HTMLButtonElement>('#clear-storage').addEventListener(
   'click',
   () => {
@@ -121,4 +139,4 @@ window.addEventListener('keydown', (event) => {
 
 window.addEventListener('resize', () => modes[activeMode].update())
 
-activate('level')
+activate(readStoredMode())
