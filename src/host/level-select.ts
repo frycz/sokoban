@@ -101,7 +101,13 @@ export function createLevelGrid(
         select(index)
       }
     })
-    button.addEventListener('click', () => activate(index))
+    // A click must not focus the card: a locked one stays on screen, and its
+    // focus ring would linger beside the highlight once the arrows move on.
+    button.addEventListener('mousedown', (event) => event.preventDefault())
+    button.addEventListener('click', () => {
+      select(index)
+      activate(index)
+    })
 
     return { button, status, repaint: () => paint(card.level.levelState) }
   })
