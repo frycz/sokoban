@@ -180,6 +180,14 @@
         margin-top: 0;
         margin-bottom: 10px;
       }
+      /* The title menu keeps one height whatever it offers — Continue and
+         Select Level come and go — with its items sat at the bottom, so the
+         card above never moves. */
+      #title-menu .menu {
+        box-sizing: border-box;
+        height: 140px;
+        justify-content: flex-end;
+      }
       .menu-item {
         font: inherit;
         font-size: 16px;
@@ -249,9 +257,12 @@
         border-radius: 6px;
         padding: 8px;
         cursor: pointer;
+        /* The selection ring is always there, only transparent, so moving the
+           selection fades one card's ring out as the next one's fades in. */
+        box-shadow: 0 0 0 1px transparent;
         transition:
-          border-color 0.12s,
-          box-shadow 0.12s;
+          border-color 0.2s ease-out,
+          box-shadow 0.2s ease-out;
       }
       .level-card.selected {
         border-color: var(--accent);
