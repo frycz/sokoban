@@ -62,7 +62,7 @@ const MOVE_ANIMATION_MS = 100
  * How long a solved board stays on screen before the level-complete panel, so
  * the last box is seen landing. The board takes no moves in the meantime.
  */
-const COMPLETE_DELAY_MS = 500
+const COMPLETE_DELAY_MS = 200
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 
