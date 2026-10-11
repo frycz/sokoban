@@ -45,8 +45,10 @@ import { createPalettePainter } from './skin/palette'
 import { createSkinPreviewPainter } from './skin/preview'
 import { ROLE_LABELS, getTopRoleAtPosition, type TileRole } from './skin/roles'
 import {
+  BACKGROUND_SUFFIX,
   GROUND_KEY,
   ROLE_COLOR_KEYS,
+  TILE_BACKGROUND_KEY,
   parseRoleColors,
   type RoleColorImport,
 } from './skin/role-colors'
@@ -1811,6 +1813,8 @@ export function createSkinMode(
    * Every named role that is bound takes the colour and keeps its mode — the
    * same deal as typing into its hex field. An unbound role is skipped rather
    * than tinted, because binding stamps the current ink over whatever it had.
+   * Backgrounds — the skin-wide one and each role's own — land whether the role
+   * is bound or not, because a rebind keeps the role's background.
    * The ground is the level's, so it goes through the session; whether it opens
    * an undo entry of its own is the caller's to say, because a paste is one
    * action and the live link is a stream of them.
@@ -1833,6 +1837,16 @@ export function createSkinMode(
       }
 
       draft = setRoleTint(draft, role, { ...draft.tints[role], color })
+      applied += 1
+    }
+
+    for (const [role, background] of parsed.backgrounds) {
+      draft = setRoleTint(draft, role, { ...draft.tints[role], background })
+      applied += 1
+    }
+
+    if (parsed.tileBackground !== null) {
+      draft = setSkinBackground(draft, parsed.tileBackground)
       applied += 1
     }
 
@@ -2005,6 +2019,14 @@ export function createSkinMode(
   const groundRow = roleColorsKeys.insertRow()
   groundRow.insertCell().textContent = GROUND_KEY
   groundRow.insertCell().textContent = 'ground — behind the level'
+
+  const tileBackgroundRow = roleColorsKeys.insertRow()
+  tileBackgroundRow.insertCell().textContent = TILE_BACKGROUND_KEY
+  tileBackgroundRow.insertCell().textContent = 'tile bg — behind every tile'
+
+  const roleBackgroundRow = roleColorsKeys.insertRow()
+  roleBackgroundRow.insertCell().textContent = `<key>${BACKGROUND_SUFFIX}`
+  roleBackgroundRow.insertCell().textContent = "that role's own bg"
 
   for (const { role, keys } of ROLE_COLOR_KEYS) {
     const row = roleColorsKeys.insertRow()

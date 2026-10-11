@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { GROUND_KEY, ROLE_COLOR_KEYS, parseRoleColors } from './role-colors'
+import {
+  GROUND_KEY,
+  ROLE_COLOR_KEYS,
+  TILE_BACKGROUND_KEY,
+  parseRoleColors,
+} from './role-colors'
 
 describe('parseRoleColors', () => {
   it('reads role names and normalises every hex to #rrggbb', () => {
@@ -43,6 +48,28 @@ describe('parseRoleColors', () => {
     ])
   })
 
+  it('reads tileBg and <key>Bg apart from the role colours', () => {
+    const result = parseRoleColors(
+      '{ "TileBg": "#000", "floor": "#111111", "floorBg": "#222222", "boxPlacedBG": "#333333" }',
+    )
+
+    expect(result?.tileBackground).toBe('#000000')
+    expect(result?.colors).toEqual(new Map([['floor', '#111111']]))
+    expect(result?.backgrounds).toEqual(
+      new Map([
+        ['floor', '#222222'],
+        ['boxOnGoal', '#333333'],
+      ]),
+    )
+    expect(parseRoleColors('{}')?.tileBackground).toBeNull()
+    expect(
+      parseRoleColors('{ "tileBg": "nope", "goalBg": 1, "lavaBg": "#fff" }'),
+    ).toMatchObject({
+      invalidKeys: ['tileBg', 'goalBg'],
+      unknownKeys: ['lavaBg'],
+    })
+  })
+
   it('matches keys without regard to case', () => {
     expect(parseRoleColors('{ "BoxOnGoal": "#000000" }')?.colors).toEqual(
       new Map([['boxOnGoal', '#000000']]),
@@ -74,5 +101,8 @@ describe('ROLE_COLOR_KEYS', () => {
 
     expect(new Set(keys).size).toBe(keys.length)
     expect(keys).not.toContain(GROUND_KEY)
+    expect(keys).not.toContain(TILE_BACKGROUND_KEY.toLowerCase())
+    // A role key ending in "bg" would read as another role's background.
+    expect(keys.filter((key) => key.endsWith('bg'))).toEqual([])
   })
 })

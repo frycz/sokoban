@@ -37,6 +37,18 @@ export const ROLE_COLOR_KEYS: readonly {
  */
 export const GROUND_KEY = 'ground'
 
+/**
+ * The skin-wide tile background, what fills every role's transparent pixels
+ * unless the role has a background of its own.
+ */
+export const TILE_BACKGROUND_KEY = 'tileBg'
+
+/**
+ * Appended to any role key to name that role's own background instead of its
+ * colour: `floorBg`, `boxPlacedBg`.
+ */
+export const BACKGROUND_SUFFIX = 'Bg'
+
 const ROLE_BY_KEY: ReadonlyMap<string, TileRole> = new Map(
   ROLE_COLOR_KEYS.flatMap(({ role, keys }) =>
     keys.map((key) => [key.toLowerCase(), role] as const),
@@ -46,8 +58,12 @@ const ROLE_BY_KEY: ReadonlyMap<string, TileRole> = new Map(
 export type RoleColorImport = {
   /** In the order the keys appear; a role named twice keeps the last colour. */
   readonly colors: ReadonlyMap<TileRole, string>
+  /** Each role's own background, from its `<key>Bg`; same order rule. */
+  readonly backgrounds: ReadonlyMap<TileRole, string>
   /** `null` when the JSON has no readable `ground`. */
   readonly ground: string | null
+  /** `null` when the JSON has no readable `tileBg`. */
+  readonly tileBackground: string | null
   /** Keys that name no role. */
   readonly unknownKeys: readonly string[]
   /** Keys that name a role but whose value is not a hex this program reads. */
@@ -74,24 +90,36 @@ export function parseRoleColors(text: string): RoleColorImport | null {
   }
 
   const colors = new Map<TileRole, string>()
+  const backgrounds = new Map<TileRole, string>()
   const unknownKeys: string[] = []
   const invalidKeys: string[] = []
   let ground: string | null = null
+  let tileBackground: string | null = null
 
   for (const [key, entry] of Object.entries(value)) {
     const color = typeof entry === 'string' ? parseHexColor(entry) : null
+    const lowerKey = key.toLowerCase()
+    const suffix = BACKGROUND_SUFFIX.toLowerCase()
 
-    if (key.toLowerCase() === GROUND_KEY) {
+    if (
+      lowerKey === GROUND_KEY ||
+      lowerKey === TILE_BACKGROUND_KEY.toLowerCase()
+    ) {
       if (color === null) {
         invalidKeys.push(key)
-      } else {
+      } else if (lowerKey === GROUND_KEY) {
         ground = color
+      } else {
+        tileBackground = color
       }
 
       continue
     }
 
-    const role = ROLE_BY_KEY.get(key.toLowerCase())
+    const isBackground = lowerKey.endsWith(suffix)
+    const role = isBackground
+      ? ROLE_BY_KEY.get(lowerKey.slice(0, -suffix.length))
+      : ROLE_BY_KEY.get(lowerKey)
 
     if (role === undefined) {
       unknownKeys.push(key)
@@ -103,8 +131,15 @@ export function parseRoleColors(text: string): RoleColorImport | null {
       continue
     }
 
-    colors.set(role, color)
+    ;(isBackground ? backgrounds : colors).set(role, color)
   }
 
-  return { colors, ground, unknownKeys, invalidKeys }
+  return {
+    colors,
+    backgrounds,
+    ground,
+    tileBackground,
+    unknownKeys,
+    invalidKeys,
+  }
 }

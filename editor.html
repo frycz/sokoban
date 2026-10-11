@@ -1008,6 +1008,12 @@
           is undone with the level.
         </p>
         <p>
+          <code>tileBg</code> sets the skin-wide tile background. Any role key
+          with <code>Bg</code> appended — <code>floorBg</code>,
+          <code>boxPlacedBg</code> — sets that role's own background, which wins
+          over <code>tileBg</code>. Backgrounds apply to unbound roles too.
+        </p>
+        <p>
           Only bound roles are recoloured, and each keeps its ink mode. Unknown
           keys and values that are not a hex are reported and skipped.
         </p>
@@ -1019,7 +1025,9 @@
   "wall": "#333c57",
   "box": "#a7f070",
   "boxPlaced": "#38b764",
-  "player": "#ef7d57"
+  "player": "#ef7d57",
+  "tileBg": "#1a1c2c",
+  "goalBg": "#29366f"
 }</pre>
         <div class="row">
           <button type="submit" value="close">Close</button>
