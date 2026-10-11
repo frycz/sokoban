@@ -267,8 +267,9 @@ function updateGame(): void {
     return
   }
 
-  play.render(play.history.current())
+  // The HUD first, so the board measures itself against its final layout.
   updateHud()
+  play.render(play.history.current())
 }
 
 function updateHud(): void {

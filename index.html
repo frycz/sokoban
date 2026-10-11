@@ -224,8 +224,12 @@
         font-weight: normal;
         color: var(--text);
       }
+      /* A zero basis keeps the canvas's backing-store size out of layout:
+         with `auto` the basis follows the canvas's width/height attributes,
+         so every render that resized the backing store nudged the board's
+         box, and the next render re-measured a slightly different size. */
       #board {
-        flex: 1 1 auto;
+        flex: 1 1 0;
         width: 100%;
         max-width: 900px;
         min-height: 0;
