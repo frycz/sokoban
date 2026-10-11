@@ -637,6 +637,7 @@ function showCompleteOverlay(
             { label: 'Next level', action: () => playLevel(nextIndex) },
             { label: 'Main menu', action: showTitle },
           ],
+      { onEscape: showTitle },
     ),
   })
 }
