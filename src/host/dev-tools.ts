@@ -1,10 +1,12 @@
 import { createRenderer } from '../render/canvas'
+import { applyDefaultSkin } from './default-skin'
 import type { PlayableLevel } from './levels'
 import type { MenuItem } from './menu'
 
 /**
- * The dev build's extras: every level at once, reordering the campaign, playing
- * it from any level, and solving a level on demand. Loaded only by
+ * The dev build's extras: every level at once, reordering the campaign, choosing
+ * the skin levels without one borrow, playing it from any level, and solving a
+ * level on demand. Loaded only by
  * `npm run dev` — `index.ts` imports this behind a constant the build folds to
  * false, so none of it, its styles included, reaches the shipped game.
  */
@@ -13,6 +15,8 @@ import type { MenuItem } from './menu'
 export type GameControls = {
   readonly levels: () => readonly PlayableLevel[]
   readonly setLevels: (ordered: readonly PlayableLevel[]) => void
+  /** The level `default-skin.json` named when the game loaded, or null. */
+  readonly defaultSkin: string | null
   readonly problems: readonly string[]
   readonly addScreen: (screen: HTMLElement) => void
   readonly showScreen: (screen: HTMLElement) => void
@@ -30,6 +34,7 @@ export type DevTools = {
 }
 
 const ORDER_ENDPOINT = '/api/level-order'
+const DEFAULT_SKIN_ENDPOINT = '/api/default-skin'
 const WIN_KEY = 'n'
 
 const STYLES = `
@@ -62,6 +67,22 @@ const STYLES = `
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--bright);
+  }
+  #dev-levels .controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  #dev-levels label {
+    color: var(--muted);
+  }
+  #dev-default-skin {
+    font: inherit;
+    color: var(--text);
+    background: #1d2230;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 3px 6px;
   }
   #dev-levels .hint {
     margin: 0;
@@ -166,12 +187,15 @@ export function createDevTools(game: GameControls): DevTools {
   const screen = createLevelsScreen()
   const list = screen.querySelector<HTMLElement>('#dev-level-list')!
   const report = screen.querySelector<HTMLElement>('#dev-levels-report')!
+  const skinPicker =
+    screen.querySelector<HTMLSelectElement>('#dev-default-skin')!
   document.body.append(screen)
   game.addScreen(screen)
 
   const problems = game.problems.join('\n')
   const cards = new Map<string, Card>()
   let draggedSlug: string | null = null
+  let defaultSkin = game.defaultSkin
 
   function cardFor(level: PlayableLevel): Card {
     const existing = cards.get(level.slug)
@@ -209,7 +233,7 @@ export function createDevTools(game: GameControls): DevTools {
     meta.className = 'meta'
     meta.textContent = `${level.slug} · ${
       level.skin ? `${level.skin.sheet.tileWidth}px tiles` : 'no tiles'
-    }`
+    }${level.skin && !level.ownSkin ? ' (default skin)' : ''}`
 
     const actions = document.createElement('div')
     actions.className = 'actions'
@@ -351,16 +375,76 @@ export function createDevTools(game: GameControls): DevTools {
     }
   }
 
+  /**
+   * Every level that shipped a skin can lend it. Rebuilt on each visit, so the
+   * list follows the campaign order.
+   */
+  function renderSkinPicker(): void {
+    const none = new Option('None — flat colour', '')
+    const lenders = game
+      .levels()
+      .filter((level) => level.ownSkin)
+      .map((level) => new Option(`${level.name} (${level.slug})`, level.slug))
+
+    skinPicker.replaceChildren(none, ...lenders)
+    skinPicker.value = defaultSkin ?? ''
+  }
+
+  /**
+   * Applied only once the file is written, so the screen never shows a choice
+   * the next load would not make. The cards are rebuilt rather than reused,
+   * because a card's renderer holds the skin it was made with.
+   */
+  async function saveDefaultSkin(from: string | null): Promise<void> {
+    try {
+      const response = await fetch(DEFAULT_SKIN_ENDPOINT, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ from }),
+      })
+      const answer = (await response.json()) as {
+        message?: string
+        file?: string
+      }
+
+      if (!response.ok) {
+        skinPicker.value = defaultSkin ?? ''
+        setReport(`Not saved: ${answer.message ?? response.statusText}`)
+
+        return
+      }
+
+      defaultSkin = from
+      game.setLevels(applyDefaultSkin(game.levels(), from).levels)
+      cards.clear()
+      renderList()
+      repaintAll()
+      setReport(`Saved to ${answer.file ?? 'levels/default-skin.json'}.`)
+    } catch (error) {
+      skinPicker.value = defaultSkin ?? ''
+      setReport(
+        `Not saved: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
+
   function setReport(message: string): void {
     report.textContent = [message, problems].filter(Boolean).join('\n')
   }
 
   function showLevels(): void {
+    renderSkinPicker()
     renderList()
     setReport('')
     game.showScreen(screen)
     repaintAll()
   }
+
+  skinPicker.addEventListener('change', () => {
+    void saveDefaultSkin(skinPicker.value || null)
+    // The arrow keys must go back to the screen rather than cycle the choice.
+    skinPicker.blur()
+  })
 
   screen
     .querySelector('#dev-levels-back')!
@@ -409,9 +493,13 @@ function createLevelsScreen(): HTMLElement {
   screen.innerHTML = `
     <header>
       <h1>Levels <span class="dev-badge">dev</span></h1>
-      <button type="button" class="dev-button" id="dev-levels-back">Title (Esc)</button>
+      <div class="controls">
+        <label for="dev-default-skin">Default skin</label>
+        <select id="dev-default-skin"></select>
+        <button type="button" class="dev-button" id="dev-levels-back">Title (Esc)</button>
+      </div>
     </header>
-    <p class="hint">Drag a card, or use ↑ ↓, to reorder the campaign — saved to levels/order.json as you go. Play from here starts a fresh run at that level.</p>
+    <p class="hint">Drag a card, or use ↑ ↓, to reorder the campaign — saved to levels/order.json as you go. Default skin is what levels without a skin of their own are drawn with — saved to levels/default-skin.json. Play from here starts a fresh run at that level.</p>
     <div id="dev-level-list"></div>
     <p id="dev-levels-report"></p>
   `

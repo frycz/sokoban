@@ -580,6 +580,7 @@ async function start(): Promise<void> {
       setLevels: (ordered) => {
         levels = ordered
       },
+      defaultSkin: catalog.defaultSkin,
       problems: catalog.problems,
       addScreen: (screen) => {
         screens.push(screen)

@@ -7,6 +7,7 @@ import {
   type LayerStack,
 } from '../render/layers'
 import { createSkin, parseSkinManifest, type Skin } from '../render/skin'
+import { applyDefaultSkin, parseDefaultSkin } from './default-skin'
 import { LEVEL } from './level-data'
 import { applyLevelOrder, parseLevelOrder } from './level-order'
 
@@ -16,19 +17,31 @@ export type PlayableLevel = {
   readonly slug: string
   readonly name: string
   readonly levelState: LevelState
-  /** Null for a level that shipped without tiles; it plays in flat colour. */
+  /**
+   * What the level draws with: its own skin, or the default one when it shipped
+   * without tiles. Null when it has neither; it plays in flat colour.
+   */
   readonly skin: Skin | null
+  /** The skin that shipped in the level's own bundle. */
+  readonly ownSkin: Skin | null
   /**
    * The draw order, bottom first, with the art layers the author painted. The
    * default order for a level that shipped none.
    */
   readonly layers: LayerStack
-  /** The colour under the whole board. Null for a level that named none. */
+  /**
+   * The colour under the whole board: its own, or the default skin's when it
+   * borrows that skin and named none. Null when there is neither.
+   */
   readonly groundColor: string | null
+  /** The ground colour the level's own `level.json` names. */
+  readonly ownGroundColor: string | null
 }
 
 export type LevelCatalog = {
   readonly levels: readonly PlayableLevel[]
+  /** The level `default-skin.json` lends a skin from, or null for none. */
+  readonly defaultSkin: string | null
   /** Bundles that could not be loaded, said out loud rather than hidden. */
   readonly problems: readonly string[]
 }
@@ -73,6 +86,12 @@ const orderRecords = import.meta.glob<unknown>('/levels/order.json', {
   import: 'default',
   eager: true,
 })
+
+/** A glob of one file, so a checkout without `default-skin.json` still builds. */
+const defaultSkinRecords = import.meta.glob<unknown>(
+  '/levels/default-skin.json',
+  { import: 'default', eager: true },
+)
 
 const BUILT_IN_SLUG = 'built-in'
 
@@ -124,11 +143,16 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
       problems.push(layers.message)
     }
 
+    const ownSkin = skin.kind === 'skin' ? skin.skin : null
+    const ownGroundColor = readHexColor(record?.groundColor)
+
     levels.push({
       ...read.level,
-      skin: skin.kind === 'skin' ? skin.skin : null,
+      skin: ownSkin,
+      ownSkin,
       layers: layers.kind === 'layers' ? layers.layers : DEFAULT_LAYER_STACK,
-      groundColor: readHexColor(record?.groundColor),
+      groundColor: ownGroundColor,
+      ownGroundColor,
     })
   }
 
@@ -139,14 +163,16 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
       levels.push({
         ...builtIn.level,
         skin: null,
+        ownSkin: null,
         layers: DEFAULT_LAYER_STACK,
         groundColor: null,
+        ownGroundColor: null,
       })
     } else {
       problems.push(builtIn.message)
     }
 
-    return { levels, problems }
+    return { levels, defaultSkin: null, problems }
   }
 
   const orderRecord = orderRecords['/levels/order.json']
@@ -160,9 +186,22 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
 
   const ordered = applyLevelOrder(levels, order ?? [])
 
+  const defaultSkinRecord = defaultSkinRecords['/levels/default-skin.json']
+  const defaultSkin =
+    defaultSkinRecord === undefined ? null : parseDefaultSkin(defaultSkinRecord)
+
+  if (defaultSkin === undefined) {
+    problems.push(
+      'default-skin.json: is not { "from": <level slug or null> }, so levels without a skin play in flat colour.',
+    )
+  }
+
+  const skinned = applyDefaultSkin(ordered.levels, defaultSkin ?? null)
+
   return {
-    levels: ordered.levels,
-    problems: [...problems, ...ordered.problems],
+    levels: skinned.levels,
+    defaultSkin: defaultSkin ?? null,
+    problems: [...problems, ...ordered.problems, ...skinned.problems],
   }
 }
 
@@ -206,7 +245,10 @@ function loadLayers(slug: string, level: Level, hasSkin: boolean): LayerResult {
 type LevelResult =
   | {
       readonly kind: 'level'
-      readonly level: Omit<PlayableLevel, 'skin' | 'layers' | 'groundColor'>
+      readonly level: Omit<
+        PlayableLevel,
+        'skin' | 'ownSkin' | 'layers' | 'groundColor' | 'ownGroundColor'
+      >
     }
   | { readonly kind: 'problem'; readonly message: string }
 

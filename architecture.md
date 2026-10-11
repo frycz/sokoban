@@ -6,11 +6,12 @@ The game logic is a pure state transition function; everything else is a thin sh
 index.html     the game
 editor.html    the level editor
 levels/        one directory per level — what the editor exports and the game plays,
-               plus order.json, the campaign order
+               plus order.json, the campaign order, and default-skin.json
 
 src/core/       types.ts, level.ts, step.ts, rules.ts   pure, no DOM, no I/O
 src/host/       index.ts, history.ts, levels.ts,        screens, history stack,
                 level-data.ts, level-order.ts,          keybindings, dispatch,
+                default-skin.ts,
                 save.ts, menu.ts, dev-tools.ts          campaign and save
 src/render/     canvas.ts, colors.ts, tile-roles.ts,    (state) => draw
                 sheet.ts, skin.ts, layers.ts
@@ -132,6 +133,7 @@ Split along the DOM line:
 - `levels.ts` — finds everything in `levels/`, parses it, loads each atlas, and hands back a list of playable levels plus the problems it hit. Async, and the only I/O the game does.
 - `history.ts` also keeps the path as LURD — uppercase for a push, so the push count is read off it — and `restoreHistory(initial, lurd)` replays a saved path back into a full history, undo stack included, or returns null when the level refuses it.
 - `level-order.ts` — `levels/order.json` read and applied. Pure.
+- `default-skin.ts` — `levels/default-skin.json` read and applied: the skin a level without one borrows. Pure.
 - `save.ts` — the save format, where Continue resumes, and the guarded `localStorage` access. Pure apart from the two storage calls.
 - `menu.ts` — the menu every screen uses: arrows or W/S and Enter, or the mouse, one highlight for both.
 - `index.ts` — the screens, the clock, saving, keybindings and the HUD. Re-renders when `run` reports a change.
@@ -190,6 +192,12 @@ so no dev code or style reaches `dist/`. It adds:
   plugin swallows the HMR update for its own write, so the page that saved the
   order is not reloaded under the author. **Play from here** starts a fresh
   run at that level.
+- **Default skin**, a picker on the same screen: which level's skin every level
+  without one of its own is drawn with. Each choice is posted to
+  `/api/default-skin`, which `tools/default-skin-plugin.ts` writes to
+  `levels/default-skin.json` — `{ "from": "<slug>" }`, or `null` for flat
+  colour — and the cards are rebuilt with it. The game reads the file on start,
+  built site included, so the choice ships.
 - **Win level**, a button under the board and the N key: the level counts as
   solved with its current moves and time.
 
@@ -442,6 +450,16 @@ The order comes from `levels/order.json`, a list of slugs, read by a sixth
 glob so a checkout without one still builds. A level it does not name — one
 just exported — plays after the listed ones, so a new level is never invisible;
 a slug with no level is skipped and reported.
+
+`levels/default-skin.json` is read by a seventh glob, for the same reason. It
+names a level whose skin is lent to every level that shipped none. Only the
+role columns travel: art layers name cells of the lender's own grid, so a
+borrower draws in the default layer order. The lender's ground colour travels
+too, but only to a level whose `level.json` names none, because the skin was
+drawn against it. `PlayableLevel` keeps what the level brought (`ownSkin`,
+`ownGroundColor`) beside what it draws with (`skin`, `groundColor`), so choosing
+again starts from the bundle rather than the last choice. A slug with no skin
+to lend is reported and lends nothing.
 
 The built-in level from `level-data.ts` is a fallback only: it is played when
 `levels/` has nothing loadable, so a fresh checkout still has something to

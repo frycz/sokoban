@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite'
+import { defaultSkinPlugin } from './tools/default-skin-plugin'
 import { levelExportPlugin } from './tools/level-export-plugin'
 import { levelOrderPlugin } from './tools/level-order-plugin'
 import { liveColorsPlugin } from './tools/live-colors-plugin'
@@ -16,8 +17,14 @@ export default defineConfig(({ mode }) => {
     // dev server's job and the plugin is serve-only. Both dev servers get it:
     // the editor runs on the same config, just a different port and entry.
     // The live link from the colour picker is serve-only for the same reason,
-    // and so is the dev build's level reordering, which writes order.json.
-    plugins: [levelExportPlugin(), levelOrderPlugin(), liveColorsPlugin()],
+    // and so is the dev build's level reordering, which writes order.json, and
+    // its default skin picker, which writes default-skin.json.
+    plugins: [
+      levelExportPlugin(),
+      levelOrderPlugin(),
+      defaultSkinPlugin(),
+      liveColorsPlugin(),
+    ],
     build: {
       outDir: isEditor ? 'dist-editor' : 'dist',
       rollupOptions: {
