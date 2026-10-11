@@ -56,13 +56,13 @@ const TICK_MS = 1000
  * pressed mid-slide snaps the pieces to where they were going and starts the
  * next one, so input never waits on the animation.
  */
-const MOVE_ANIMATION_MS = 100
+const MOVE_ANIMATION_MS = 75
 
 /**
  * How long a solved board stays on screen before the level-complete panel, so
  * the last box is seen landing. The board takes no moves in the meantime.
  */
-const COMPLETE_DELAY_MS = 200
+const COMPLETE_DELAY_MS = 100
 
 /** The panel's fade in, slower than other changes of view so it arrives gently. */
 const COMPLETE_FADE_IN_MS = 300
@@ -489,7 +489,7 @@ function drawBoard(): void {
 
   const elapsed = (performance.now() - slide.startedAt) / MOVE_ANIMATION_MS
   const progress = Math.min(1, elapsed)
-  play.render(current, { from: slide.from, progress: easeOutCubic(progress) })
+  play.render(current, { from: slide.from, progress })
 
   if (progress >= 1) {
     slide = null
@@ -507,11 +507,6 @@ function startSlide(from: LevelState): void {
 function stopSlide(): void {
   cancelAnimationFrame(slideFrame)
   slide = null
-}
-
-/** Quick off the mark and gentle on arrival, so a slide reads as settling. */
-function easeOutCubic(progress: number): number {
-  return 1 - (1 - progress) ** 3
 }
 
 function updateHud(): void {
