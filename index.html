@@ -192,6 +192,60 @@
       #title-menu .menu:has(> .menu-item:only-child) {
         justify-content: center;
       }
+      /* While the levels load: the menu's own box, holding three dots that
+         wait a moment before showing, so a quick load never flashes them. */
+      .loader {
+        display: flex;
+        gap: 6px;
+        align-self: center;
+        margin-block: auto;
+        opacity: 0;
+        animation: loader-in 0.3s ease-out 0.15s forwards;
+      }
+      .loader span {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--muted);
+        animation: loader-dot 1.2s ease-in-out infinite;
+      }
+      .loader span:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+      .loader span:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+      @keyframes loader-in {
+        to {
+          opacity: 1;
+        }
+      }
+      @keyframes loader-dot {
+        0%,
+        100% {
+          opacity: 0.25;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      /* The first menu after loading fades in where the loader was. */
+      .menu.entering .menu-item {
+        animation: menu-enter 0.3s ease-out both;
+      }
+      @keyframes menu-enter {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        @keyframes menu-enter {
+          from {
+            opacity: 0;
+          }
+        }
+      }
       .menu-item {
         font: inherit;
         font-size: 16px;
@@ -489,7 +543,15 @@
         <p class="prompt" id="title-prompt" style="visibility: hidden">
           Start over? Your current progress will be lost.
         </p>
-        <div id="title-menu"></div>
+        <!-- Until the levels load: the menu's box, so nothing moves when the
+             menu arrives. -->
+        <div id="title-menu">
+          <div class="menu">
+            <div class="loader" role="status" aria-label="Loading">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+        </div>
       </div>
       <p class="keys">
         <kbd>↑</kbd> <kbd>↓</kbd> choose · <kbd>Enter</kbd> select

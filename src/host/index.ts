@@ -709,6 +709,8 @@ async function start(): Promise<void> {
   }
 
   showTitle()
+  // Only this first time: the menu fades in where the loader was.
+  titleMenuSlot.querySelector('.menu')?.classList.add('entering')
 }
 
 void start()
