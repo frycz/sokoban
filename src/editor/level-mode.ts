@@ -24,10 +24,16 @@ const BRUSH_OF_KEY: Record<string, Brush | undefined> = {
   '5': 'player',
 }
 
+/** Level mode plus the redraw for a document replaced from outside it. */
+export type LevelMode = EditorMode & {
+  /** The size fields follow the document only when told, as after an undo. */
+  readonly showReplacedDocument: () => void
+}
+
 export function createLevelMode(
   session: Session,
   levelAutosave: LevelAutosave,
-): EditorMode {
+): LevelMode {
   const gridView = requireElement<HTMLElement>('#grid-view')
   const canvas = requireElement<HTMLCanvasElement>('#grid')
   const brushes = requireElement<HTMLElement>('#brushes')
@@ -269,5 +275,13 @@ export function createLevelMode(
   selectBrush(selectedBrush)
   syncSizeInputs()
 
-  return { update, handleKey, reset }
+  return {
+    update,
+    handleKey,
+    reset,
+    showReplacedDocument: () => {
+      syncSizeInputs()
+      update()
+    },
+  }
 }

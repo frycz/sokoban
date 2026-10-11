@@ -178,6 +178,15 @@
       .publish input[type='text'] {
         flex: 0 1 12em;
       }
+      .publish select {
+        font: inherit;
+        color: inherit;
+        max-width: 16em;
+        background: #1d2230;
+        border: 1px solid #2c3444;
+        border-radius: 4px;
+        padding: 4px 6px;
+      }
       /* Empty until something is exported, and the column gap would otherwise
          leave a hole in the top bar. */
       #publish-report:empty {
@@ -578,6 +587,9 @@
       <button type="button" id="mode-skin">Skin</button>
       <button type="button" id="mode-colors">Colours</button>
       <span class="publish">
+        <select id="level-open" aria-label="open a level from levels/">
+          <option value="">open level…</option>
+        </select>
         <input id="level-name" type="text" placeholder="level name" />
         <button type="button" id="publish">Export to levels/</button>
       </span>

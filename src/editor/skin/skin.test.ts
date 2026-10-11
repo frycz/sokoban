@@ -149,7 +149,7 @@ describe('setRoleTint', () => {
 })
 
 describe('getRoleTint', () => {
-  it('is the role\'s own tint when the skin has no background', () => {
+  it("is the role's own tint when the skin has no background", () => {
     const draft = setRoleTint(createEmptySkinDraft(), 'wall', GREEN)
 
     expect(getRoleTint(draft, 'wall')).toBe(draft.tints.wall)
@@ -171,7 +171,7 @@ describe('getRoleTint', () => {
     })
   })
 
-  it('lets a role\'s own background override the skin background', () => {
+  it("lets a role's own background override the skin background", () => {
     const draft = setSkinBackground(
       setRoleTint(createEmptySkinDraft(), 'wall', {
         ...GREEN,

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Plugin } from 'vite'
 import { parseStringToLevelState } from '../src/core/level'
@@ -8,6 +8,12 @@ import { parseStringToLevelState } from '../src/core/level'
  * The editor's Export to levels/ button, server side. A browser cannot write to
  * the repository, so the dev server does it: one endpoint, one directory per
  * level, and the game's globs pick the result up on its next load.
+ *
+ * It also reads them back, for the editor's Open level picker: a GET lists the
+ * bundles, and a GET with a slug hands one over in the shape the export posts,
+ * so a level can be opened, changed and exported over itself. Through the dev
+ * server rather than the editor's own globs, because a glob over `levels/`
+ * would reload the editor every time it exported.
  *
  * Dev only, deliberately — the editor is an internal tool and this writes to
  * the working tree. Nothing about it reaches a built bundle.
@@ -53,8 +59,14 @@ async function handle(
   response: ServerResponse,
   root: string,
 ): Promise<void> {
+  if (request.method === 'GET') {
+    await handleRead(request.url ?? '/', response, root)
+
+    return
+  }
+
   if (request.method !== 'POST') {
-    send(response, 405, { message: `${ENDPOINT} takes a POST.` })
+    send(response, 405, { message: `${ENDPOINT} takes a GET or a POST.` })
 
     return
   }
@@ -128,6 +140,7 @@ async function handle(
   }
 
   send(response, 200, {
+    slug: payload.slug,
     directory: `${LEVELS_DIRECTORY}/${payload.slug}/`,
   })
 }
@@ -168,7 +181,14 @@ function parsePayload(body: string): ExportRequest | string {
     return 'The export request needs a name and a level.'
   }
 
-  const slug = toSlug(record.name)
+  // A level opened from `levels/` goes back to the directory it came from, which
+  // its name need not slug to — `Original 1` lives in `original-01/`. Checked
+  // against the same shape `toSlug` produces, so it cannot reach outside either.
+  if (record.slug !== undefined && !isSlug(record.slug)) {
+    return 'The export request named a directory that is not a level slug.'
+  }
+
+  const slug = isSlug(record.slug) ? record.slug : toSlug(record.name)
 
   if (slug === '') {
     return `"${record.name}" has no letters or digits to make a directory name from.`
@@ -273,6 +293,174 @@ function toSlug(name: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+function isSlug(value: unknown): value is string {
+  return typeof value === 'string' && SLUG_PATTERN.test(value)
+}
+
+/**
+ * `/` lists every bundle, `/<slug>` returns one. The middleware is mounted on
+ * the endpoint, so the url here is what follows it.
+ */
+async function handleRead(
+  url: string,
+  response: ServerResponse,
+  root: string,
+): Promise<void> {
+  const path = url.split('?')[0].replace(/^\/+|\/+$/g, '')
+  const levelsDirectory = join(root, LEVELS_DIRECTORY)
+
+  if (path === '') {
+    send(response, 200, { levels: await listLevels(levelsDirectory) })
+
+    return
+  }
+
+  if (!isSlug(path)) {
+    send(response, 400, { message: `"${url}" is not a level slug.` })
+
+    return
+  }
+
+  const bundle = await readBundle(join(levelsDirectory, path))
+
+  if (!bundle) {
+    send(response, 404, { message: `There is no level in levels/${path}/.` })
+
+    return
+  }
+
+  send(response, 200, { slug: path, ...bundle })
+}
+
+/**
+ * Every directory with a `level.xsb`, in campaign order and then the rest by
+ * slug — the order the author already thinks of them in.
+ */
+async function listLevels(
+  levelsDirectory: string,
+): Promise<{ readonly slug: string; readonly name: string }[]> {
+  const entries = await readdir(levelsDirectory, { withFileTypes: true })
+  const levels: { slug: string; name: string }[] = []
+
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !isSlug(entry.name)) {
+      continue
+    }
+
+    const directory = join(levelsDirectory, entry.name)
+
+    if ((await readOptionalFile(join(directory, 'level.xsb'))) === null) {
+      continue
+    }
+
+    const record = readJsonRecord(
+      await readOptionalFile(join(directory, 'level.json')),
+    )
+
+    levels.push({
+      slug: entry.name,
+      name: typeof record?.name === 'string' ? record.name : entry.name,
+    })
+  }
+
+  const order = await readOptionalFile(join(levelsDirectory, 'order.json'))
+  let ordered: unknown = []
+
+  try {
+    ordered = order === null ? [] : JSON.parse(order)
+  } catch {
+    // A broken order file only costs the ordering.
+  }
+
+  const rank = (slug: string): number => {
+    const index = Array.isArray(ordered) ? ordered.indexOf(slug) : -1
+
+    return index < 0 ? Number.POSITIVE_INFINITY : index
+  }
+
+  return levels.sort(
+    (one, other) =>
+      rank(one.slug) - rank(other.slug) || one.slug.localeCompare(other.slug),
+  )
+}
+
+/**
+ * One bundle in the export's own shape. Nothing is judged here — the editor
+ * reads every part leniently, as the game does — so a half-broken bundle still
+ * opens as far as it can.
+ */
+async function readBundle(directory: string): Promise<{
+  readonly name: string
+  readonly xsb: string
+  readonly groundColor: string | null
+  readonly skin: SkinPayload | null
+} | null> {
+  const xsb = await readOptionalFile(join(directory, 'level.xsb'))
+
+  if (xsb === null) {
+    return null
+  }
+
+  const record = readJsonRecord(
+    await readOptionalFile(join(directory, 'level.json')),
+  )
+  const manifest = await readOptionalFile(join(directory, 'skin.json'))
+  const atlas = await readOptionalBytes(join(directory, 'skin.png'))
+
+  return {
+    name:
+      typeof record?.name === 'string'
+        ? record.name
+        : (directory.split('/').pop() ?? ''),
+    xsb,
+    groundColor:
+      typeof record?.groundColor === 'string' &&
+      GROUND_COLOR_PATTERN.test(record.groundColor)
+        ? record.groundColor
+        : null,
+    skin:
+      manifest === null || atlas === null
+        ? null
+        : {
+            manifest,
+            atlasDataUrl: `${ATLAS_PREFIX}${atlas.toString('base64')}`,
+            layers: await readOptionalFile(join(directory, 'tiles.json')),
+          },
+  }
+}
+
+function readJsonRecord(text: string | null): Record<string, unknown> | null {
+  if (text === null) {
+    return null
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(text)
+
+    return typeof parsed === 'object' && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : null
+  } catch {
+    return null
+  }
+}
+
+async function readOptionalFile(path: string): Promise<string | null> {
+  const bytes = await readOptionalBytes(path)
+
+  return bytes === null ? null : bytes.toString('utf8')
+}
+
+async function readOptionalBytes(path: string): Promise<Buffer | null> {
+  try {
+    return await readFile(path)
+  } catch {
+    return null
+  }
+}
+
 function readBody(request: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
@@ -298,7 +486,7 @@ function readBody(request: IncomingMessage): Promise<string> {
 function send(
   response: ServerResponse,
   status: number,
-  payload: Record<string, string>,
+  payload: Record<string, unknown>,
 ): void {
   response.statusCode = status
   response.setHeader('content-type', 'application/json')

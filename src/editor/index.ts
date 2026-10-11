@@ -6,6 +6,8 @@ import {
 import { createColorsMode } from './colors-mode'
 import { requireElement, type EditorMode } from './dom'
 import { createLevelMode } from './level-mode'
+import { createLevelPicker } from './level-picker'
+import { openLevelBundle, type LevelBundle } from './open-level'
 import { createPublishPanel } from './publish'
 import { createSession } from './session'
 import { createSkinMode } from './skin-mode'
@@ -46,8 +48,10 @@ const colorPalettes = createColorPaletteLibraryStore(
 // the two panels share the document rather than each holding their own.
 const skinMode = createSkinMode(session, levelAutosave, colorPalettes)
 
+const levelMode = createLevelMode(session, levelAutosave)
+
 const modes: Record<ModeName, EditorMode> = {
-  level: createLevelMode(session, levelAutosave),
+  level: levelMode,
   skin: skinMode,
   colors: createColorsMode(colorPalettes),
 }
@@ -55,7 +59,34 @@ const modes: Record<ModeName, EditorMode> = {
 // Not a mode: a level bundle is the level and the tiles together, so the one
 // control that needs both halves sits in the top bar and is owned here, for the
 // same reason Clear storage is.
-const publishPanel = createPublishPanel(session, skinMode.getSkinExport)
+const publishPanel = createPublishPanel(session, skinMode.getSkinExport, () => {
+  void levelPicker.refresh()
+})
+
+/**
+ * Opening a level from `levels/` replaces both halves, like Export writes both:
+ * the document goes through the session, so Undo brings the previous level
+ * back, but the skin is not on the undo stack — which is why it asks first.
+ */
+async function openLevel(bundle: LevelBundle): Promise<void> {
+  if (
+    !window.confirm(
+      `Open ${bundle.name}? The level can be undone, but the skin in the Skin panel will be replaced.`,
+    )
+  ) {
+    return
+  }
+
+  const opened = openLevelBundle(bundle)
+
+  await skinMode.openSkin(opened.skin)
+  session.replace(opened.document)
+  levelMode.showReplacedDocument()
+  publishPanel.showOpened(bundle.name, bundle.slug, opened.problems)
+  modes[activeMode].update()
+}
+
+const levelPicker = createLevelPicker(openLevel, publishPanel.showError)
 
 const sections: Record<ModeName, HTMLElement> = {
   level: requireElement<HTMLElement>('#level-mode'),

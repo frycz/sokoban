@@ -19,6 +19,7 @@ src/editor/     document.ts, xsb.ts, validate.ts,       level mode, same pure/sh
                 session.ts, layout.ts, canvas.ts,       plus autosave:
                 level-mode.ts, dom.ts, zoom.ts,         stored-state.ts, autosave.ts,
                 index.ts, publish.ts, tint.ts           storage.ts — and the export to levels/
+                open-level.ts, level-picker.ts          and opening a bundle from it again
                 colors-mode.ts, color-palettes.ts,      colours mode: palettes kept beside
                 color-palette-library.ts, hex.ts,       the level, for both colour panels
                 swatches.ts
@@ -284,6 +285,14 @@ later (author, par, a solution) goes in the same file. Both fields are read
 leniently: a missing or malformed name falls back to the slug, and a ground
 colour that is not `#rrggbb` reads as no ground, because a colour the canvas
 would reject silently is worse than one that was never there.
+
+### Opening a level from `levels/`
+
+The editor's top bar has an **open level…** picker listing every bundle in `levels/`, in `order.json` order and then by slug. It reads through the same dev-server endpoint Export writes through — `GET /api/levels` lists, `GET /api/levels/<slug>` returns one bundle in the shape the export posts — rather than through the game's globs, because a glob over `levels/` would reload the editor every time it exported.
+
+The game never has the sheet a skin was cut from, only the packed atlas, so the atlas comes back as the sheet: the manifest's tile size, margin and spacing slice it into one tile per column, role `n` is bound to tile `n`, and an art tile's column is its tile index (`open-level.ts`). Inks are already pixels in the atlas, so everything opens untinted and exporting again repacks the same pixels. The document goes through `session.replace`, so Undo brings the previous level back; the skin is not on the undo stack, which is why opening asks first.
+
+A directory is a slug of the name only for levels the editor made — `Original 1` lives in `original-01/` — so the publish panel remembers the directory a level was opened from and sends it with the export for as long as the name is left alone. Renaming exports to a new directory, as before.
 
 ### The ground colour is the level's backdrop
 

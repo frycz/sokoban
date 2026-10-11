@@ -33,15 +33,71 @@ const ENDPOINT = '/api/levels'
  * optional: an incomplete skin exports as a level that plays in flat colour,
  * because a half-bound skin is a normal state to be in halfway through.
  */
+export type PublishPanel = {
+  readonly reset: () => void
+  /**
+   * A level was opened from `levels/`: its name goes in the box, and Export
+   * writes back to the directory it came from for as long as the name is left
+   * alone.
+   */
+  readonly showOpened: (
+    name: string,
+    slug: string,
+    problems: readonly string[],
+  ) => void
+  readonly showError: (message: string) => void
+}
+
+/**
+ * The name in the box, and the directory it was last opened from or exported
+ * to. A plain string is what an older build stored: a name with no directory.
+ */
+type StoredPublish = {
+  readonly name: string
+  readonly slug: string | null
+}
+
+function readStoredPublish(): StoredPublish {
+  const text = readStoredText('publish') ?? ''
+
+  try {
+    const parsed: unknown = JSON.parse(text)
+
+    if (typeof parsed === 'object' && parsed !== null) {
+      const record = parsed as Record<string, unknown>
+
+      return {
+        name: typeof record.name === 'string' ? record.name : '',
+        slug: typeof record.slug === 'string' ? record.slug : null,
+      }
+    }
+  } catch {
+    // Not JSON, so the name on its own.
+  }
+
+  return { name: text, slug: null }
+}
+
 export function createPublishPanel(
   session: Session,
   getSkinExport: () => SkinExport | null,
-): { readonly reset: () => void } {
+  onExported: () => void,
+): PublishPanel {
   const nameInput = requireElement<HTMLInputElement>('#level-name')
   const publishButton = requireElement<HTMLButtonElement>('#publish')
   const report = requireElement<HTMLElement>('#publish-report')
 
-  nameInput.value = readStoredText('publish') ?? ''
+  // The level's home in `levels/`, and the name it had there. A directory is a
+  // slug of the name only for levels the editor made — `Original 1` lives in
+  // `original-01/` — so an opened level remembers where it came from, and a
+  // rename is what moves it somewhere new.
+  let home: StoredPublish = readStoredPublish()
+
+  nameInput.value = home.name
+
+  function storeHome(): void {
+    writeStoredText('publish', JSON.stringify(home))
+  }
 
   function setMessage(message: string, className: string): void {
     const line = document.createElement('p')
@@ -79,6 +135,7 @@ export function createPublishPanel(
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         name,
+        slug: home.slug !== null && home.name === name ? home.slug : undefined,
         xsb: formatDocumentAsPublishedXsb(session.current()),
         // Level data rather than skin data, so it travels beside the XSB and
         // lands in `level.json`: a level published with an unfinished skin — no
@@ -116,7 +173,12 @@ export function createPublishPanel(
       return
     }
 
-    writeStoredText('publish', name)
+    home = {
+      name,
+      slug: typeof result.slug === 'string' ? result.slug : null,
+    }
+    storeHome()
+    onExported()
     setMessage(
       `Exported to ${String(result.directory)}${skin ? '' : ' without tiles — the skin is incomplete'}. Reload the game to play it.`,
       'ok',
@@ -144,9 +206,27 @@ export function createPublishPanel(
    */
   return {
     reset: () => {
+      home = { name: '', slug: null }
       nameInput.value = ''
       report.replaceChildren()
     },
+    showOpened: (name, slug, problems) => {
+      home = { name, slug }
+      storeHome()
+      nameInput.value = name
+      setMessage(
+        `Opened levels/${slug}/ — Export writes back to it unless the name changes.`,
+        'ok',
+      )
+
+      for (const problem of problems) {
+        const line = document.createElement('p')
+        line.className = 'warning'
+        line.textContent = problem
+        report.append(line)
+      }
+    },
+    showError: (message) => setMessage(message, 'error'),
   }
 }
 

@@ -160,6 +160,14 @@ const BUILT_IN_LAYER_LABELS: Record<BuiltInLayer, string> = {
  */
 export type SkinMode = EditorMode & {
   readonly getSkinExport: () => SkinExport | null
+  /**
+   * Replaces the skin with one opened from `levels/` — or with none, for a
+   * level that shipped without tiles. Unlike picking a sheet this keeps the
+   * document's placements: they were opened with it, against this sheet.
+   */
+  readonly openSkin: (
+    skin: { readonly draft: SkinDraft; readonly sheetDataUrl: string } | null,
+  ) => Promise<void>
 }
 
 /**
@@ -1112,6 +1120,27 @@ export function createSkinMode(
     }
 
     update()
+  }
+
+  async function openSkin(
+    skin: { readonly draft: SkinDraft; readonly sheetDataUrl: string } | null,
+  ): Promise<void> {
+    // Decoded before anything is replaced, so an atlas that does not read
+    // leaves the panel as it was rather than half opened.
+    const image = skin
+      ? await readDataUrlAsImageBitmap(skin.sheetDataUrl)
+      : null
+
+    draft = skin?.draft ?? createEmptySkinDraft()
+    sheetImage = image
+    sheetDataUrl = skin?.sheetDataUrl ?? null
+    selectedTileIndex = UNBOUND
+    selectedLayerId = null
+    hiddenLayerIds = new Set()
+    soloLayerId = null
+    paletteZoom.reset()
+    fileInput.value = ''
+    syncSheetInputs()
   }
 
   /**
@@ -2114,5 +2143,5 @@ export function createSkinMode(
     }
   }
 
-  return { update, reset, handleKey, getSkinExport }
+  return { update, reset, handleKey, getSkinExport, openSkin }
 }
