@@ -1,6 +1,6 @@
 import {
   FLOOR_CELL,
-  NO_CUSTOM_TILES,
+  DEFAULT_LAYERS,
   NO_GROUND_COLOR,
   WALL_CELL,
   getCellX,
@@ -81,7 +81,7 @@ export function parseXsbToDocument(text: string): EditorDocument {
     width,
     height,
     cells,
-    customTiles: NO_CUSTOM_TILES,
+    layers: DEFAULT_LAYERS,
     groundColor: NO_GROUND_COLOR,
   }
 }

@@ -88,12 +88,7 @@ function startLevel(level: PlayableLevel): void {
   activeGame = {
     level,
     history: createHistory(level.levelState),
-    render: createRenderer(
-      canvas,
-      level.skin,
-      level.customTiles,
-      level.groundColor,
-    ),
+    render: createRenderer(canvas, level.skin, level.layers, level.groundColor),
   }
 
   levelsSection.hidden = true
@@ -110,7 +105,7 @@ function createLevelCard(level: PlayableLevel): HTMLButtonElement {
   const paint = createRenderer(
     miniature,
     level.skin,
-    level.customTiles,
+    level.layers,
     level.groundColor,
   )
   repaintMiniatures.push(() => paint(level.levelState))

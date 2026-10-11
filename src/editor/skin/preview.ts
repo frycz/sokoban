@@ -2,16 +2,17 @@ import { getSheetGrid, getSourceTileRect } from '../../render/sheet'
 import { getRoleColor } from '../../render/skin'
 import { getBaseRole, type TileRole } from '../../render/tile-roles'
 import { prepareBackingStore } from '../backing-store'
+import type { BuiltInLayer } from '../../render/layers'
 import {
   getCellX,
   getCellY,
-  isCellOverwritten,
   type EditorDocument,
+  type EditorLayer,
 } from '../document'
 import { computeGridLayout } from '../layout'
 import type { Tint } from '../tint'
 import { getWallRoleAt } from './roles'
-import { isRoleBound, type SkinDraft } from './skin'
+import { getRoleTint, isRoleBound, type SkinDraft } from './skin'
 import { createTintedTileCache } from './tinted-tiles'
 
 const PREVIEW_COLORS = {
@@ -19,14 +20,17 @@ const PREVIEW_COLORS = {
 }
 
 /**
- * What the preview is showing rather than what it is drawing. The two switches
- * are how the author tells custom from skin: hiding the skin's tiles leaves the
- * hand-placed ones over a flat-colour level, and hiding the custom ones is the
- * skin as the game would draw it if nothing had been placed.
+ * What the preview is showing rather than what it is drawing. Hiding the skin's
+ * tiles leaves the hand-placed ones over a flat-colour level. The layer
+ * switches are the editor's own, never the level's: a hidden layer is still
+ * exported and still drawn by the game.
  */
 export type SkinPreviewView = {
   readonly showSkinTiles: boolean
-  readonly showCustomTiles: boolean
+  /** Layer ids the author has switched off. */
+  readonly hiddenLayerIds: ReadonlySet<string>
+  /** When set, the one layer drawn, whatever is hidden. */
+  readonly soloLayerId: string | null
   /** -1 when the pointer is off the board. */
   readonly hoverPosition: number
   /** A multiple of the fit-to-view tile size; see `computeGridLayout`. */
@@ -34,9 +38,8 @@ export type SkinPreviewView = {
 }
 
 /**
- * The level from level mode, drawn under the skin. Layer order matches what the
- * game renderer does: floor under every cell of the board, wall or goal over it,
- * the object over both, and a hand-placed tile over all of them.
+ * The level from level mode, drawn under the skin, layer by layer in the
+ * document's own order — the order the game will draw it in.
  *
  * Like the game, a wall with no floor anywhere around it is not drawn at all,
  * so a skin never has to supply art for "outside the level".
@@ -149,7 +152,7 @@ export function createSkinPreviewPainter(
       if (
         options.showSkinTiles &&
         isRoleBound(draft, role) &&
-        drawSheetTile(draft.bindings[role], draft.tints[role], x, y)
+        drawSheetTile(draft.bindings[role], getRoleTint(draft, role), x, y)
       ) {
         return
       }
@@ -158,56 +161,57 @@ export function createSkinPreviewPainter(
       context.fillRect(x, y, tileSize, tileSize)
     }
 
-    for (let position = 0; position < editorDocument.cells.length; position++) {
-      const cell = editorDocument.cells[position]
-      const { x, y } = topLeftOf(position)
+    const isOnBoard = (position: number): boolean =>
+      !editorDocument.cells[position].isWall ||
+      touchesFloor(editorDocument, position)
 
-      // Outside the level nothing is drawn at all, not even floor, so a skin
-      // never has to supply art for it.
-      if (cell.isWall && !touchesFloor(editorDocument, position)) {
-        continue
-      }
-
-      // An overwriting placement means this cell is the placed tile and nothing
-      // else, so none of the skin's layers go down first — which is what makes
-      // a transparent tile a hole rather than a window onto the floor. Only
-      // while the placements are being shown: hiding them has to give the skin
-      // back, not leave gaps.
-      if (
-        options.showCustomTiles &&
-        isCellOverwritten(editorDocument, position)
+    const drawBuiltIn = (id: BuiltInLayer): void => {
+      for (
+        let position = 0;
+        position < editorDocument.cells.length;
+        position++
       ) {
-        continue
-      }
+        const cell = editorDocument.cells[position]
+        const { x, y } = topLeftOf(position)
 
-      // Floor first on every cell the board occupies, walls included: it is one
-      // layer under the level and every other tile composites over it.
-      drawRole('floor', x, y)
+        // Outside the level nothing is drawn at all, not even floor, so a skin
+        // never has to supply art for it.
+        if (!isOnBoard(position)) {
+          continue
+        }
 
-      if (cell.isWall) {
-        drawRole(getWallRoleAt(editorDocument, position), x, y)
-
-        continue
-      }
-
-      if (cell.isGoal) {
-        drawRole('goal', x, y)
-      }
-
-      if (cell.content === 'box') {
-        drawRole(cell.isGoal ? 'boxOnGoal' : 'box', x, y)
-      }
-
-      if (cell.content === 'player') {
-        drawRole('player', x, y)
+        if (id === 'floor') {
+          drawRole('floor', x, y)
+        } else if (id === 'walls' && cell.isWall) {
+          drawRole(getWallRoleAt(editorDocument, position), x, y)
+        } else if (id === 'goals' && cell.isGoal) {
+          drawRole('goal', x, y)
+        } else if (id === 'boxes' && cell.content === 'box') {
+          drawRole(cell.isGoal ? 'boxOnGoal' : 'box', x, y)
+        } else if (id === 'player' && cell.content === 'player') {
+          drawRole('player', x, y)
+        }
       }
     }
 
-    // Last, over everything, and over the culled cells too: a tile placed by
-    // hand is the author saying what that cell looks like, which outranks both
-    // the skin's answer and the board's own silhouette.
-    if (options.showCustomTiles) {
-      for (const [position, customTile] of editorDocument.customTiles) {
+    const isVisible = (layer: EditorLayer): boolean =>
+      options.soloLayerId === null
+        ? !options.hiddenLayerIds.has(layer.id)
+        : layer.id === options.soloLayerId
+
+    for (const layer of editorDocument.layers) {
+      if (!isVisible(layer)) {
+        continue
+      }
+
+      if (layer.kind === 'builtIn') {
+        drawBuiltIn(layer.id)
+        continue
+      }
+
+      // Over the culled cells too: a tile placed by hand is the author saying
+      // what that cell looks like, which outranks the board's own silhouette.
+      for (const [position, customTile] of layer.tiles) {
         const { x, y } = topLeftOf(position)
 
         if (!drawSheetTile(customTile.tileIndex, customTile.tint, x, y)) {

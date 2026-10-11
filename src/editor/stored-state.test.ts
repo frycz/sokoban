@@ -4,7 +4,15 @@ import {
   EMPTY_COLOR_PALETTE_LIBRARY,
   type ColorPaletteLibrary,
 } from './color-palettes'
-import { setCustomTile, setGroundColor } from './document'
+import {
+  addArtLayer,
+  getArtLayer,
+  moveLayer,
+  renameArtLayer,
+  setCustomTile,
+  setGroundColor,
+  type EditorDocument,
+} from './document'
 import {
   bindRole,
   createEmptySkinDraft,
@@ -24,6 +32,9 @@ import { formatDocumentAsXsb, parseXsbToDocument } from './xsb'
 
 const GREEN: Tint = { color: '#55aa33', mode: 'flat', background: null }
 
+const tilesOf = (editorDocument: EditorDocument | null, layerId = 'art-1') =>
+  editorDocument && [...(getArtLayer(editorDocument, layerId)?.tiles ?? [])]
+
 const SHEET = 'data:image/png;base64,AAAA'
 
 const LEVEL = xsb('#######', '#.@ # #', '#$* $ #', '# ..  #', '#######')
@@ -34,15 +45,17 @@ const LEVEL = xsb('#######', '#.@ # #', '#$* $ #', '# ..  #', '#######')
  * `parseXsbToDocument` trims an all-space row before the codec ever sees it —
  * which is the very thing the stored form exists to survive.
  */
-/** A stored record for `LEVEL` with its custom tiles replaced wholesale. */
+/**
+ * A stored record for `LEVEL` as a build from before layers wrote it: one map
+ * of placements, and no stack.
+ */
 function storedLevelWith(customTiles: Record<string, unknown>): string {
-  return JSON.stringify({
-    ...(JSON.parse(encodeStoredLevel(parseXsbToDocument(LEVEL))) as Record<
-      string,
-      unknown
-    >),
-    customTiles,
-  })
+  const record = JSON.parse(
+    encodeStoredLevel(parseXsbToDocument(LEVEL)),
+  ) as Record<string, unknown>
+  delete record.layers
+
+  return JSON.stringify({ ...record, customTiles })
 }
 
 /** A stored record for `LEVEL` with its ground colour replaced wholesale. */
@@ -95,19 +108,52 @@ describe('stored level', () => {
     expect(decodeStoredLevel(JSON.stringify({ version: 1 }))).toBeNull()
   })
 
-  it('keeps the custom tiles, which XSB has nowhere to put', () => {
+  it('keeps the layers and their tiles, which XSB has nowhere to put', () => {
+    const start = moveLayer(
+      renameArtLayer(
+        addArtLayer(parseXsbToDocument(LEVEL), 'floor'),
+        'art-2',
+        'rugs',
+      ),
+      'player',
+      -1,
+    )
     const placed = setCustomTile(
-      setCustomTile(parseXsbToDocument(LEVEL), 8, 20, 'onTop', NO_TINT),
+      setCustomTile(start, 'art-1', 8, 20, NO_TINT),
+      'art-2',
       9,
       21,
-      'overwrite',
       GREEN,
     )
     const restored = decodeStoredLevel(encodeStoredLevel(placed))
 
-    expect(restored && [...restored.customTiles]).toEqual([
-      [8, { tileIndex: 20, mode: 'onTop', tint: NO_TINT }],
-      [9, { tileIndex: 21, mode: 'overwrite', tint: GREEN }],
+    expect(restored?.layers.map((layer) => layer.id)).toEqual(
+      placed.layers.map((layer) => layer.id),
+    )
+    expect(restored && getArtLayer(restored, 'art-2')?.name).toBe('rugs')
+    expect(tilesOf(restored)).toEqual([[8, { tileIndex: 20, tint: NO_TINT }]])
+    expect(tilesOf(restored, 'art-2')).toEqual([
+      [9, { tileIndex: 21, tint: GREEN }],
+    ])
+  })
+
+  it('puts back a built-in layer a stored stack lost', () => {
+    const record = JSON.parse(
+      encodeStoredLevel(parseXsbToDocument(LEVEL)),
+    ) as Record<string, unknown>
+    const restored = decodeStoredLevel(
+      JSON.stringify({
+        ...record,
+        layers: [{ builtIn: 'player' }, { builtIn: 'player' }, { id: 'x' }],
+      }),
+    )
+
+    expect(restored?.layers.map((layer) => layer.id)).toEqual([
+      'player',
+      'floor',
+      'walls',
+      'goals',
+      'boxes',
     ])
   })
 
@@ -122,25 +168,23 @@ describe('stored level', () => {
       }),
     )
 
-    expect(restored && [...restored.customTiles]).toEqual([
-      [0, { tileIndex: 4, mode: 'onTop', tint: NO_TINT }],
-    ])
+    expect(tilesOf(restored)).toEqual([[0, { tileIndex: 4, tint: NO_TINT }]])
   })
 
   /**
-   * The mode and the ink are the two fields a stored placement can be missing,
-   * because neither existed in the first build of the feature. On top with no
-   * ink is what those drew, so absence already means the right thing and the
-   * stored version never had to move.
+   * The ink is a field a stored placement can be missing, because the first
+   * build of the feature had none, and a bare index is what that build wrote.
+   * The mode is gone altogether, so whatever an old record says about it is
+   * ignored.
    */
-  it('reads a placement with no mode or ink, and a bare index, as on top', () => {
+  it('reads a placement with no ink, and a bare index, with no ink', () => {
     const restored = decodeStoredLevel(
       storedLevelWith({ 0: { tileIndex: 4 }, 1: 5, 2: { mode: 'overwrite' } }),
     )
 
-    expect(restored && [...restored.customTiles]).toEqual([
-      [0, { tileIndex: 4, mode: 'onTop', tint: NO_TINT }],
-      [1, { tileIndex: 5, mode: 'onTop', tint: NO_TINT }],
+    expect(tilesOf(restored)).toEqual([
+      [0, { tileIndex: 4, tint: NO_TINT }],
+      [1, { tileIndex: 5, tint: NO_TINT }],
     ])
   })
 
@@ -157,19 +201,18 @@ describe('stored level', () => {
       }),
     )
 
-    expect(restored && [...restored.customTiles]).toEqual([
-      [0, { tileIndex: 4, mode: 'onTop', tint: NO_TINT }],
+    expect(tilesOf(restored)).toEqual([
+      [0, { tileIndex: 4, tint: NO_TINT }],
       // The colour is fine, only the mode is nonsense — and a case-folded hex
       // is a colour, so only the mode falls back.
       [
         1,
         {
           tileIndex: 4,
-          mode: 'onTop',
           tint: { color: '#abc123', mode: 'multiply', background: null },
         },
       ],
-      [2, { tileIndex: 4, mode: 'onTop', tint: NO_TINT }],
+      [2, { tileIndex: 4, tint: NO_TINT }],
     ])
   })
 
@@ -209,7 +252,12 @@ describe('stored level', () => {
 describe('stored skin', () => {
   const draft = setRoleTint(
     bindRole(
-      { ...createEmptySkinDraft(), name: 'mossy stone', isPixelated: false },
+      {
+        ...createEmptySkinDraft(),
+        name: 'mossy stone',
+        isPixelated: false,
+        background: '#101010',
+      },
       'floor',
       7,
     ),

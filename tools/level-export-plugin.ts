@@ -26,8 +26,8 @@ const SKIN_FILES = ['skin.json', 'skin.png', 'tiles.json'] as const
 type SkinPayload = {
   readonly manifest: string
   readonly atlasDataUrl: string
-  /** `tiles.json`, or null when no cell was given a tile of its own. */
-  readonly customTiles: string | null
+  /** `tiles.json`, or null when the level draws in the default order. */
+  readonly layers: string | null
 }
 
 export function levelExportPlugin(): Plugin {
@@ -110,10 +110,10 @@ async function handle(
 
     // Only the levels that have one, so a bundle is never left with a tiles.json
     // whose columns the new atlas no longer has.
-    if (payload.skin.customTiles) {
+    if (payload.skin.layers) {
       await writeFile(
         join(directory, 'tiles.json'),
-        payload.skin.customTiles,
+        payload.skin.layers,
         'utf8',
       )
     } else {
@@ -241,23 +241,22 @@ function parseSkin(value: unknown): SkinPayload | null | string {
     return 'The skin manifest was not JSON.'
   }
 
-  if (record.customTiles !== null && record.customTiles !== undefined) {
-    if (typeof record.customTiles !== 'string') {
-      return 'The custom tiles were not a file.'
+  if (record.layers !== null && record.layers !== undefined) {
+    if (typeof record.layers !== 'string') {
+      return 'The layers were not a file.'
     }
 
     try {
-      JSON.parse(record.customTiles)
+      JSON.parse(record.layers)
     } catch {
-      return 'The custom tiles were not JSON.'
+      return 'The layers were not JSON.'
     }
   }
 
   return {
     manifest: record.manifest,
     atlasDataUrl: record.atlasDataUrl,
-    customTiles:
-      typeof record.customTiles === 'string' ? record.customTiles : null,
+    layers: typeof record.layers === 'string' ? record.layers : null,
   }
 }
 

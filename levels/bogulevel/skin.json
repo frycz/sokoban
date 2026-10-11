@@ -1,0 +1,16 @@
+{
+  "name": "untitled",
+  "tileWidth": 16,
+  "tileHeight": 16,
+  "margin": 1,
+  "spacing": 2,
+  "pixelated": true,
+  "roles": [
+    "floor",
+    "goal",
+    "wall",
+    "box",
+    "boxOnGoal",
+    "player"
+  ]
+}

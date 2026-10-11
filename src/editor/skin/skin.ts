@@ -35,6 +35,12 @@ export type SkinDraft = {
    * afterwards comes back to the colours already chosen.
    */
   readonly tints: Readonly<Record<TileRole, Tint>>
+  /**
+   * `#rrggbb` painted under every role's tile whose own tint has no background,
+   * or `null` for none. A role's own background wins, so this is the default and
+   * the per-role field the exception — `getRoleTint` is where the two meet.
+   */
+  readonly background: string | null
 }
 
 /**
@@ -57,6 +63,7 @@ export function createEmptySkinDraft(): SkinDraft {
     isPixelated: true,
     bindings: EMPTY_BINDINGS,
     tints: EMPTY_TINTS,
+    background: null,
   }
 }
 
@@ -93,6 +100,34 @@ export function setRoleTint(
   }
 
   return { ...draft, tints: { ...draft.tints, [role]: tint } }
+}
+
+/** Returns the same draft when nothing changed, as `setRoleTint` does. */
+export function setSkinBackground(
+  draft: SkinDraft,
+  background: string | null,
+): SkinDraft {
+  if (draft.background === background) {
+    return draft
+  }
+
+  return { ...draft, background }
+}
+
+/**
+ * The tint a role is actually drawn with: its own, with the skin-wide
+ * background filled in when the role has none of its own. Everything that
+ * paints a role — the thumbnails, the preview, the atlas — goes through this,
+ * so the stored tint keeps saying only what the author set on that row.
+ */
+export function getRoleTint(draft: SkinDraft, role: TileRole): Tint {
+  const tint = draft.tints[role]
+
+  if (tint.background !== null || draft.background === null) {
+    return tint
+  }
+
+  return { ...tint, background: draft.background }
 }
 
 export function setSheetSettings(

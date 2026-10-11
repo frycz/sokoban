@@ -1,7 +1,11 @@
 import { parseStringToLevelState } from '../core/level'
 import type { Level, LevelState } from '../core/types'
 import { readHexColor } from '../render/colors'
-import { parseCustomTileMap, type CustomTileMap } from '../render/custom-tiles'
+import {
+  DEFAULT_LAYER_STACK,
+  parseLayerStack,
+  type LayerStack,
+} from '../render/layers'
 import { createSkin, parseSkinManifest, type Skin } from '../render/skin'
 import { LEVEL } from './level-data'
 
@@ -11,8 +15,11 @@ export type PlayableLevel = {
   readonly levelState: LevelState
   /** Null for a level that shipped without tiles; it plays in flat colour. */
   readonly skin: Skin | null
-  /** The cells the author gave a tile of their own. Null when there are none. */
-  readonly customTiles: CustomTileMap | null
+  /**
+   * The draw order, bottom first, with the art layers the author painted. The
+   * default order for a level that shipped none.
+   */
+  readonly layers: LayerStack
   /** The colour under the whole board. Null for a level that named none. */
   readonly groundColor: string | null
 }
@@ -53,7 +60,7 @@ const atlasUrls = import.meta.glob<string>('/levels/*/skin.png', {
   eager: true,
 })
 
-const customTileRecords = import.meta.glob<unknown>('/levels/*/tiles.json', {
+const layerRecords = import.meta.glob<unknown>('/levels/*/tiles.json', {
   import: 'default',
   eager: true,
 })
@@ -78,7 +85,7 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
     levels.push({
       ...builtIn.level,
       skin: null,
-      customTiles: null,
+      layers: DEFAULT_LAYER_STACK,
       groundColor: null,
     })
   } else {
@@ -107,21 +114,20 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
       problems.push(skin.message)
     }
 
-    const customTiles = loadCustomTiles(
+    const layers = loadLayers(
       slug,
       read.level.levelState.level,
       skin.kind === 'skin',
     )
 
-    if (customTiles.kind === 'problem') {
-      problems.push(customTiles.message)
+    if (layers.kind === 'problem') {
+      problems.push(layers.message)
     }
 
     levels.push({
       ...read.level,
       skin: skin.kind === 'skin' ? skin.skin : null,
-      customTiles:
-        customTiles.kind === 'customTiles' ? customTiles.customTiles : null,
+      layers: layers.kind === 'layers' ? layers.layers : DEFAULT_LAYER_STACK,
       groundColor: readHexColor(record?.groundColor),
     })
   }
@@ -129,8 +135,8 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
   return { levels, problems }
 }
 
-type CustomTileResult =
-  | { readonly kind: 'customTiles'; readonly customTiles: CustomTileMap }
+type LayerResult =
+  | { readonly kind: 'layers'; readonly layers: LayerStack }
   | { readonly kind: 'none' }
   | { readonly kind: 'problem'; readonly message: string }
 
@@ -140,12 +146,8 @@ type CustomTileResult =
  * level's. Both are checked here rather than assumed, because a hand-edited
  * bundle drawing every tile one cell off would be worse than one drawing none.
  */
-function loadCustomTiles(
-  slug: string,
-  level: Level,
-  hasSkin: boolean,
-): CustomTileResult {
-  const record = customTileRecords[`/levels/${slug}/tiles.json`]
+function loadLayers(slug: string, level: Level, hasSkin: boolean): LayerResult {
+  const record = layerRecords[`/levels/${slug}/tiles.json`]
 
   if (record === undefined) {
     return { kind: 'none' }
@@ -154,29 +156,26 @@ function loadCustomTiles(
   if (!hasSkin) {
     return {
       kind: 'problem',
-      message: `${slug}: has tiles.json but no usable skin to cut them from, so its custom tiles are ignored.`,
+      message: `${slug}: has tiles.json but no usable skin to cut them from, so its layers are ignored.`,
     }
   }
 
-  const customTiles = parseCustomTileMap(record, level.width, level.height)
+  const layers = parseLayerStack(record, level.width, level.height)
 
-  if (!customTiles) {
+  if (!layers) {
     return {
       kind: 'problem',
-      message: `${slug}: tiles.json does not describe this level's ${level.width}×${level.height} grid, so its custom tiles are ignored.`,
+      message: `${slug}: tiles.json is not a layer stack for this level's ${level.width}×${level.height} grid, so its layers are ignored.`,
     }
   }
 
-  return { kind: 'customTiles', customTiles }
+  return { kind: 'layers', layers }
 }
 
 type LevelResult =
   | {
       readonly kind: 'level'
-      readonly level: Omit<
-        PlayableLevel,
-        'skin' | 'customTiles' | 'groundColor'
-      >
+      readonly level: Omit<PlayableLevel, 'skin' | 'layers' | 'groundColor'>
     }
   | { readonly kind: 'problem'; readonly message: string }
 

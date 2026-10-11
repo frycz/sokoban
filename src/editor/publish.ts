@@ -6,7 +6,7 @@ import { formatDocumentAsPublishedXsb } from './xsb'
 
 /**
  * The tiles half of a bundle: the manifest text, the packed atlas as a data url,
- * and `tiles.json` for the cells the author placed a tile on. All three are
+ * and `tiles.json` for the layer stack and the tiles painted on it. All three are
  * opaque to this module — skin mode builds them, this one posts them — which is
  * what keeps publishing from being a second place that knows how a skin is
  * packed.
@@ -14,8 +14,8 @@ import { formatDocumentAsPublishedXsb } from './xsb'
 export type SkinExport = {
   readonly manifest: string
   readonly atlasDataUrl: string
-  /** Null when no cell was given a tile of its own. */
-  readonly customTiles: string | null
+  /** Null when the level draws in the default order with no art layers. */
+  readonly layers: string | null
 }
 
 const ENDPOINT = '/api/levels'

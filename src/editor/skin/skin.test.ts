@@ -14,9 +14,11 @@ import {
   formatSkinManifest,
   getBoundRoles,
   getMissingRequiredRoles,
+  getRoleTint,
   isSkinComplete,
   setRoleTint,
   setSheetSettings,
+  setSkinBackground,
   toSkinFileName,
   unbindRole,
   type SkinDraft,
@@ -143,6 +145,48 @@ describe('setRoleTint', () => {
 
     expect(draft.bindings.wall).toBe(UNBOUND)
     expect(draft.tints.wall).toEqual(GREEN)
+  })
+})
+
+describe('getRoleTint', () => {
+  it('is the role\'s own tint when the skin has no background', () => {
+    const draft = setRoleTint(createEmptySkinDraft(), 'wall', GREEN)
+
+    expect(getRoleTint(draft, 'wall')).toBe(draft.tints.wall)
+  })
+
+  it('fills in the skin background for a role without one of its own', () => {
+    const draft = setSkinBackground(
+      setRoleTint(createEmptySkinDraft(), 'wall', GREEN),
+      '#101010',
+    )
+
+    expect(getRoleTint(draft, 'wall')).toEqual({
+      ...GREEN,
+      background: '#101010',
+    })
+    expect(getRoleTint(draft, 'floor')).toEqual({
+      ...NO_TINT,
+      background: '#101010',
+    })
+  })
+
+  it('lets a role\'s own background override the skin background', () => {
+    const draft = setSkinBackground(
+      setRoleTint(createEmptySkinDraft(), 'wall', {
+        ...GREEN,
+        background: '#ff0000',
+      }),
+      '#101010',
+    )
+
+    expect(getRoleTint(draft, 'wall').background).toBe('#ff0000')
+  })
+
+  it('returns the same draft when the skin background is unchanged', () => {
+    const draft = setSkinBackground(createEmptySkinDraft(), '#101010')
+
+    expect(setSkinBackground(draft, '#101010')).toBe(draft)
   })
 })
 

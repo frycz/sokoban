@@ -1,7 +1,14 @@
 import { readHexColor } from '../render/colors'
 import { ROLE_ORDER, type TileRole } from '../render/tile-roles'
 import type { ColorPalette, ColorPaletteLibrary } from './color-palettes'
-import type { CustomTile, CustomTiles, EditorDocument } from './document'
+import { isBuiltInLayer } from '../render/layers'
+import {
+  DEFAULT_LAYERS,
+  type CustomTile,
+  type CustomTiles,
+  type EditorDocument,
+  type EditorLayer,
+} from './document'
 import { clampSheetSettings, type SheetSettings } from '../render/sheet'
 import {
   UNBOUND,
@@ -34,15 +41,23 @@ export type StoredSkin = {
  * a row shorter. `-` is the XSB alphabet's own explicit floor, so no row is ever
  * blank and the round trip is exact.
  *
- * The custom tiles and the ground colour ride alongside rather than inside,
- * because XSB has nowhere to put either: a flat position for the cell, and the
- * placement for the art.
+ * The layers and the ground colour ride alongside rather than inside, because
+ * XSB has nowhere to put either: a built-in layer is its id, an art layer its
+ * id, name, and a flat position → placement map.
  */
 export function encodeStoredLevel(editorDocument: EditorDocument): string {
   return JSON.stringify({
     version: STORED_VERSION,
     xsb: formatDocumentAsPublishedXsb(editorDocument),
-    customTiles: Object.fromEntries(editorDocument.customTiles),
+    layers: editorDocument.layers.map((layer) =>
+      layer.kind === 'builtIn'
+        ? { builtIn: layer.id }
+        : {
+            id: layer.id,
+            name: layer.name,
+            tiles: Object.fromEntries(layer.tiles),
+          },
+    ),
     groundColor: editorDocument.groundColor,
   })
 }
@@ -64,10 +79,7 @@ export function decodeStoredLevel(text: string | null): EditorDocument | null {
 
   return {
     ...editorDocument,
-    customTiles: readCustomTiles(
-      record.customTiles,
-      editorDocument.width * editorDocument.height,
-    ),
+    layers: readLayers(record, editorDocument.width * editorDocument.height),
     // A record written before the ground colour existed has none, which is what
     // it was drawn with — so again the stored version did not have to move,
     // because the field's absence already means what the old record meant.
@@ -76,17 +88,74 @@ export function decodeStoredLevel(text: string | null): EditorDocument | null {
 }
 
 /**
- * A record written before custom tiles existed simply has none, which is why the
- * stored version did not have to move: the field's absence already means the
- * right thing. Anything out of the level's bounds or not a placement is dropped,
- * the same way a nonsense binding comes back unbound.
+ * Field by field, and forgiving where the bundle parser is strict: this is the
+ * author's own work in progress, so a layer that does not read is dropped
+ * rather than the whole record, and a built-in missing from the stack is put
+ * back on top of it rather than leaving the level with no walls on screen.
  *
- * A bare number is what the first build of this feature wrote, before a
- * placement grew a mode. Read as `onTop`, which is what it drew.
+ * A record written before layers existed has `customTiles` instead — one map of
+ * placements over the default order. It comes back as the default stack with
+ * those placements on its art layer, which is what it drew; a placement's old
+ * `overwrite` mode is dropped with the mode itself.
+ */
+function readLayers(
+  record: Record<string, unknown>,
+  cellCount: number,
+): readonly EditorLayer[] {
+  if (!Array.isArray(record.layers)) {
+    const tiles = readCustomTiles(record.customTiles, cellCount)
+
+    return DEFAULT_LAYERS.map((layer) =>
+      layer.kind === 'art' ? { ...layer, tiles } : layer,
+    )
+  }
+
+  const layers: EditorLayer[] = []
+  const takenIds = new Set<string>()
+
+  for (const entry of record.layers) {
+    const stored = readObject(entry)
+
+    if (isBuiltInLayer(stored.builtIn)) {
+      if (!takenIds.has(stored.builtIn)) {
+        takenIds.add(stored.builtIn)
+        layers.push({ kind: 'builtIn', id: stored.builtIn })
+      }
+
+      continue
+    }
+
+    const id = typeof stored.id === 'string' ? stored.id : ''
+
+    if (!id.startsWith('art-') || takenIds.has(id)) {
+      continue
+    }
+
+    takenIds.add(id)
+    layers.push({
+      kind: 'art',
+      id,
+      name: typeof stored.name === 'string' ? stored.name : id,
+      tiles: readCustomTiles(stored.tiles, cellCount),
+    })
+  }
+
+  for (const layer of DEFAULT_LAYERS) {
+    if (layer.kind === 'builtIn' && !takenIds.has(layer.id)) {
+      layers.push(layer)
+    }
+  }
+
+  return layers
+}
+
+/**
+ * Anything out of the level's bounds or not a placement is dropped, the same
+ * way a nonsense binding comes back unbound.
  *
- * A record written before placements grew an ink has none, and no tint reads as
- * the identity — so again the stored version did not have to move, because the
- * field's absence already means what the old record meant.
+ * A bare number is what the first build of custom tiles wrote, before a
+ * placement grew an ink. A record without an ink reads as the identity tint,
+ * which is what it was drawn with.
  */
 function readCustomTiles(value: unknown, cellCount: number): CustomTiles {
   const stored = readObject(value)
@@ -108,7 +177,6 @@ function readCustomTiles(value: unknown, cellCount: number): CustomTiles {
 
     customTiles.set(position, {
       tileIndex,
-      mode: readObject(record).mode === 'overwrite' ? 'overwrite' : 'onTop',
       tint: readTint(readObject(record).tint),
     })
   }
@@ -127,6 +195,7 @@ export function encodeStoredSkin(
     isPixelated: draft.isPixelated,
     bindings: draft.bindings,
     tints: draft.tints,
+    background: draft.background,
     sheetDataUrl,
   })
 }
@@ -165,6 +234,7 @@ export function decodeStoredSkin(text: string | null): StoredSkin | null {
         : empty.isPixelated,
     bindings: readBindings(record.bindings),
     tints: readTints(record.tints),
+    background: readHexColor(record.background),
   }
 
   return {

@@ -11,7 +11,7 @@ src/core/       types.ts, level.ts, step.ts, rules.ts   pure, no DOM, no I/O
 src/host/       index.ts, history.ts, levels.ts,        picker, history stack,
                 level-data.ts                           keybindings, dispatch
 src/render/     canvas.ts, colors.ts, tile-roles.ts,    (state) => draw
-                sheet.ts, skin.ts, custom-tiles.ts
+                sheet.ts, skin.ts, layers.ts
 src/editor/     document.ts, xsb.ts, validate.ts,       level mode, same pure/shell/draw split
                 session.ts, layout.ts, canvas.ts,       plus autosave:
                 level-mode.ts, dom.ts, zoom.ts,         stored-state.ts, autosave.ts,
@@ -20,7 +20,7 @@ src/editor/     document.ts, xsb.ts, validate.ts,       level mode, same pure/sh
                 color-palette-library.ts, hex.ts,       the level, for both colour panels
                 swatches.ts
 src/editor/skin/ skin.ts, roles.ts, atlas.ts,           skin mode
-                 custom-tiles.ts, palette.ts,
+                 layers.ts, palette.ts,
                  palette-layout.ts, preview.ts,
                  tinted-tiles.ts
 tools/          level-export-plugin.ts                  the dev-server endpoint publish.ts posts to
@@ -139,7 +139,7 @@ arrow keys belong to a board, and until a level is picked there is no board for
 them to move anything on. Escape and the Levels button put it back to null.
 
 The renderer is built per level rather than once for the canvas, because the
-skin belongs to the level: `createRenderer(canvas, level.skin, level.customTiles)`
+skin belongs to the level: `createRenderer(canvas, level.skin, level.layers)`
 draws that bundle's tiles, and `createRenderer(canvas, null)` draws the
 procedural palette for a level that shipped without any.
 
@@ -157,18 +157,18 @@ Keys: arrows or WASD to move, Z or U to undo, R to reset, Escape for the level l
 
 ## `render/` — dumb
 
-`createRenderer(canvas, skin, customTiles)` returns a `render(levelState): void` that redraws the whole board. Reads `level.wallMap` and `level.goalPositions` for the board, and `playerCurrentPosition` and `boxPositions` for the movable pieces. The custom tiles are the one thing it draws that is not a function of state — they are the level's own art, fixed for its lifetime, which is why they are a constructor argument like the skin. No event listeners, no game logic, no knowledge of history.
+`createRenderer(canvas, skin, layers)` returns a `render(levelState): void` that redraws the whole board. Reads `level.wallMap` and `level.goalPositions` for the board, and `playerCurrentPosition` and `boxPositions` for the movable pieces. The layer stack is the one thing it is given that is not a function of state — the level's draw order and its hand-placed art, fixed for its lifetime, which is why it is a constructor argument like the skin. No event listeners, no game logic, no knowledge of history.
 
 Full redraw every time is deliberate: it keeps the renderer a pure function of state with nothing to invalidate, and a Sokoban board is small enough that the cost is irrelevant.
 
-| File              | Role                                                                                                               |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `canvas.ts`       | the two painters — tiles when there is a skin, flat colour when there is not — over the level's ground             |
-| `colors.ts`       | the palette, and `readHexColor` — the one way a colour the author picked arrives from outside. A leaf              |
-| `tile-roles.ts`   | `ROLE_ORDER`, `TileRole`, and the wall classifier, a leaf                                                          |
-| `sheet.ts`        | how to cut a grid of tiles out of an image. Pure                                                                   |
-| `skin.ts`         | a manifest parsed, bound to its atlas, and resolved to a rect per role — or per column, for the custom tiles. Pure |
-| `custom-tiles.ts` | the `tiles.json` format: the mode, the placement, and the reader. A leaf                                           |
+| File            | Role                                                                                                               |
+| --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `canvas.ts`     | the two painters — tiles when there is a skin, flat colour when there is not — over the level's ground             |
+| `colors.ts`     | the palette, and `readHexColor` — the one way a colour the author picked arrives from outside. A leaf              |
+| `tile-roles.ts` | `ROLE_ORDER`, `TileRole`, and the wall classifier, a leaf                                                          |
+| `sheet.ts`      | how to cut a grid of tiles out of an image. Pure                                                                   |
+| `skin.ts`       | a manifest parsed, bound to its atlas, and resolved to a rect per role — or per column, for the custom tiles. Pure |
+| `layers.ts`     | the `tiles.json` format: the built-in layers, the stack, and the reader. A leaf                                    |
 
 ### The skin lives in `render/`, not in the editor
 
@@ -208,8 +208,8 @@ levels/quarry-steps/
   level.json   { "name": "Quarry Steps", "groundColor": "#1a2b3c" }
   skin.png     the packed atlas        — optional
   skin.json    the manifest for it     — optional
-  tiles.json   the cells with art of   — optional, and only with a skin
-               their own
+  tiles.json   the layer stack and the  — optional, and only with a skin
+               art painted on it
 ```
 
 A directory rather than files with a shared prefix, because the names inside are
@@ -248,7 +248,7 @@ name:
 - Nothing can bind it and no art names it. It is not a tile, so it does not take
   a role or a column.
 
-In the game it is a `createRenderer` argument like the skin and the custom tiles
+In the game it is a `createRenderer` argument like the skin and the layer stack
 — the level's own, fixed for its lifetime, rather than anything read off the
 state — and `prepareCanvas` lays it down, so a skinned and an unskinned board
 are over the same ground. It covers the board's own rectangle rather than the
@@ -275,78 +275,49 @@ happens to change nothing — the way `NO_TINT` is — so the row has a `×` bes
 the swatch, and the picker keeps its colour afterwards so clearing and picking
 again does not start from black.
 
-### Custom tiles are the level's, not the skin's
+### Layers are the level's, not the skin's
 
-`tiles.json` is the cells whose art the author placed by hand — a sheet tile on
-one cell, drawn last, over the skin's answer and over the box or player standing
-there. That is the opposite of what a binding is, and the two live in different
-places for that reason.
+`tiles.json` is the level's draw order: an explicit stack of layers, bottom first, the way a tile editor has them. Five of them are built in and drawn from the state — `floor`, `walls`, `goals`, `boxes`, `player` — and any number of art layers sit among them, each a sparse map of cells the author painted a sheet tile on. Without the file a level draws in the built-in order, which is what the renderer used to hardcode.
 
 ```json
 {
   "width": 16,
   "height": 12,
-  "tiles": {
-    "34": { "column": 6, "mode": "onTop" },
-    "35": { "column": 7, "mode": "overwrite" }
-  }
+  "layers": [
+    { "builtIn": "floor" },
+    { "name": "rugs", "tiles": { "34": 6 } },
+    { "builtIn": "walls" },
+    { "builtIn": "goals" },
+    { "builtIn": "boxes" },
+    { "builtIn": "player" },
+    { "name": "canopy", "tiles": { "35": 7 } }
+  ]
 }
 ```
 
-It is level data: `EditorDocument` carries a `customTiles` map beside its
-`cells`, so a placement rides on the undo stack, is rewritten by
-`resizeDocument` against the new width, and goes away when the document does.
-`SkinDraft` never sees it. What it holds is skin data, though — a tile index into
-the loaded sheet — which is why loading a sheet or re-slicing one erases every
-placement exactly as it clears every binding: an index only means something
-against one grid.
+Every stack holds each built-in exactly once. They can be moved anywhere — the player under a canopy layer, a rug layer between the floor and the walls — but not removed, because a stack without `walls` is a level with no walls on screen and never what an author meant. `parseLayerStack` refuses a file that misses or doubles one, and the level plays in the default order instead.
 
-The game never has the sheet, only the packed atlas, so the export translates.
-`skin/custom-tiles.ts` gives each distinct placed tile one column after the role
-columns and hands the same answer to both halves — `atlas.ts` packs those
-columns, `tiles.json` points at them — so the image and the file cannot disagree
-about which column is which. The manifest's `roles` list is unchanged and still
-names column `n`; the custom columns have no name, which is why
-`getSkinColumnRect` asks by number.
+There used to be a per-cell `onTop` / `overwrite` mode. Layers replace it: an art layer can sit anywhere in the stack, so "under" or "over" the skin is where the layer is rather than a flag on each cell. The one thing overwrite did that layers cannot — a transparent tile punching a hole through the skin on one cell — was dropped deliberately; an opaque tile on a higher layer covers a cell just as well.
 
-They ship with the skin rather than beside the level because what they name is
-columns in that atlas. A bundle with `tiles.json` and no usable skin has nothing
-for them to index, and `host/levels.ts` says so and plays without them.
+It is level data: `EditorDocument` carries `layers` beside its `cells`, so a placement or a reorder rides on the undo stack, art is rewritten by `resizeDocument` against the new width, and all of it goes away when the document does. `SkinDraft` never sees it. What an art tile holds is skin data, though — a tile index into the loaded sheet — which is why loading a sheet or re-slicing one erases every placement on every layer exactly as it clears every binding: an index only means something against one grid. The layers themselves stay; their order and names mean the same against any sheet.
 
-`render/custom-tiles.ts` is where the format itself lives — the mode, the
-placement, and the reader — as a leaf that imports nothing, like `colors.ts` and
-`tile-roles.ts`. Both sides need the vocabulary and neither may depend on the
-other: the editor authors a placement and writes the file, the game reads it and
-draws it.
+An art layer has an `id` (`art-1`, `art-2`, …) as well as a name, because the name is something the author edits and an index moves every time the stack is reordered. `getNextArtLayerId` hands out one past the highest in use, so an undo can never bring back a layer whose id was given to another.
 
-#### On top or overwrite is the cell's choice, not the tile's
+The game never has the sheet, only the packed atlas, so the export translates. `skin/layers.ts` gives each distinct placed tile one column after the role columns, across every art layer, and hands the same answer to both halves — `atlas.ts` packs those columns, `tiles.json` points at them — so the image and the file cannot disagree about which column is which. The manifest's `roles` list is unchanged and still names column `n`; the custom columns have no name, which is why `getSkinColumnRect` asks by number. An art layer with nothing on it is not exported, and a level whose stack is the default order with no art ships no `tiles.json` at all.
 
-`onTop` composites the placed tile over the cell's usual stack, so transparency
-shows the floor — or the box standing there — through it. `overwrite` draws the
-cell from nothing but the placed tile, so transparency is a hole in the board
-rather than a window onto the skin. For an opaque tile the two are
-indistinguishable, which is exactly why the format cannot infer it and the author
-has to say.
+They ship with the skin rather than beside the level because what art names is columns in that atlas. A bundle with `tiles.json` and no usable skin has nothing for it to index, and `host/levels.ts` says so and plays in the default order.
 
-It is per cell rather than per tile, so two cells can share one atlas column and
-still do different things to what is under them. That costs nothing in the atlas
-— the column is the art, the mode is the cell's — and it is what lets one plant
-sprite sit on grass in one place and punch through the wall in another.
+`render/layers.ts` is where the format itself lives — the built-in ids, the stack, and the reader — as a leaf that imports nothing, like `colors.ts` and `tile-roles.ts`. Both sides need the vocabulary and neither may depend on the other: the editor authors a stack and writes the file, the game reads it and draws it.
 
-In the editor the mode switch sets what the **place tile** tool writes, and
-**4 swap mode** flips a placement that already exists, leaving its tile alone.
-A fourth tool rather than folding it into `place`, because re-stamping a cell to
-change its mode would need the original tile still selected and would quietly
-replace the art if it were not.
+#### The layers panel is a view of the stack, not part of it
 
-Swapping is the one placement tool that is not idempotent, which is why the drag
-handler only applies a tool when the pointer crosses into a new cell: a pointer
-trembling inside one cell would otherwise flip it back and forth.
+Skin mode's sidebar lists the stack top first, as every layer panel does. Each row has a visibility switch, a solo button that shows that layer alone, and up and down; an art layer also has its name, its tile count and a delete. **show all** clears every switch.
 
-Both renderers skip a cell's skin layers when it is overwritten — the board loop,
-the box loop and the player, since the placement outranks all three. The preview
-does it only while the placements are being shown, because hiding them has to
-give the skin back rather than leave gaps.
+Visibility and solo are view state, like the zoom: a hidden layer is still exported and still drawn by the game, so they are not on the document and not on the undo stack. Reordering, adding, deleting and renaming are edits, one undo entry each.
+
+The selected row is where **place tile**, **erase tile** and **recolor** paint, and where **+ layer** inserts. Any row can be selected, so a new layer can go anywhere, but only an art layer can be painted — with a built-in one selected the tools do nothing and the report says why. The selection is resolved against the document on every redraw, because an undo can take the selected layer away; it falls back to the topmost art layer.
+
+The preview draws the document's own stack in order, with the same culling as the game — built-in layers stop at the board's silhouette, art does not — so what the panel shows is what the game will draw.
 
 #### A position is an index into one grid
 
@@ -363,7 +334,7 @@ for the identical reason; the XSB textarea keeps spaces, because that one is for
 reading.
 
 Belt and braces on top: the file states its own `width` and `height`, and
-`parseCustomTileMap` refuses it when they are not the level's. A hand-edited
+`parseLayerStack` refuses it when they are not the level's. A hand-edited
 bundle drawing every tile one cell off would be worse than one drawing none.
 
 #### The preview has a hover marker, so it has a second redraw
@@ -523,7 +494,7 @@ The undo stack does not persist. A reload is a new session, and the document is 
 
 Storing it in the format the editor already reads and writes means there is no second level codec to keep in step. The substitution is the catch: `parseXsbToDocument` trims blank lines off the top and bottom, so a document whose first row is all floor would come back a row shorter. `-` is the XSB alphabet's own explicit floor, so no row is ever blank and the round trip is exact. `stored-state.test.ts` asserts it on exactly that document.
 
-The custom tiles ride alongside the text rather than inside it, as a position → sheet index object, because XSB has nowhere to put them. A record written before they existed simply has none, which is why the stored version did not have to move: the field's absence already means the right thing. The ground colour rides alongside for the same reason and reads back the same way — no ground is what an older record was drawn with.
+The layers ride alongside the text rather than inside it — a built-in as its id, an art layer as its id, name and a position → sheet index object — because XSB has nowhere to put them. A record written before custom tiles existed simply has none, and one written before layers has a single `customTiles` map, read as the default stack with that map on its art layer — which is why the stored version did not have to move. The ground colour rides alongside for the same reason and reads back the same way — no ground is what an older record was drawn with.
 
 #### A skin is stored with its sheet
 
@@ -599,7 +570,7 @@ editor/tint.ts Tint, the ink vocabulary — editor-only, see below
 ↑
 skin.ts ← atlas.ts ← tinted-tiles.ts pure (the last two use a canvas)
 ↑ ↑ ↑ ↑ ↑
-│ │ custom-tiles.ts palette-layout.ts pure
+│ │ layers.ts palette-layout.ts pure
 │ │ ↑ ↑
 roles.ts │ │ pure
 ↑ │ │
@@ -614,7 +585,7 @@ The game renderer resolves a sprite from state — it never sees a cell's identi
 
 Because a level need not contain every role — there is nothing to click if it has no goals — the role list in the sidebar is a second drop target for the same action. The palette selection is the brush; the preview and the role list are both places to apply it.
 
-The **place tile**, **erase tile**, **swap mode** and **recolor** tools are the way out of that: one cell, one tile, over or instead of whatever the skin decided. That is per-cell art, which is level data rather than skin data, and it lives on the document — see "Custom tiles are the level's, not the skin's".
+The **place tile**, **erase tile** and **recolor** tools are the way out of that: one cell of one art layer, one tile, over or under whatever the skin decided depending on where that layer sits. That is per-cell art, which is level data rather than skin data, and it lives on the document — see "Layers are the level's, not the skin's".
 
 ### Colour is the author's, and it is baked into the atlas
 
@@ -627,7 +598,7 @@ A monochrome tile sheet has no colour in it to adjust — `levels/monochrome/ski
 | a stencil (white ink) | unchanged         | **≈ C**         | **exactly C**                |
 | multicoloured art     | **unchanged**     | shaded toward C | repainted flat, shading lost |
 
-Multiplying by white is the no-op, which is why "no tint" is a value rather than an absence: nothing has an optional field to branch on, and a tile never tinted is the same tile as one tinted back to white. Multiply can only ever darken — `flat` is there because that is a real limit, not because a stencil could not be done with multiply. For a tile whose ink is already white the two are indistinguishable, which is exactly why the author picks rather than the editor inferring, the same argument `onTop` / `overwrite` is made on.
+Multiplying by white is the no-op, which is why "no tint" is a value rather than an absence: nothing has an optional field to branch on, and a tile never tinted is the same tile as one tinted back to white. Multiply can only ever darken — `flat` is there because that is a real limit, not because a stencil could not be done with multiply. For a tile whose ink is already white the two are indistinguishable, which is exactly why the author picks rather than the editor inferring.
 
 Hue and saturation sliders, and palette remapping, are deliberately absent: on multicoloured art they are numbers you cannot predict per tile, and the stencil case — the one that actually prompted this — does not need them.
 
@@ -641,11 +612,11 @@ A blend mode still composites source-over, so filling an opaque colour over a `m
 
 `SkinDraft.tints` is a second map beside `bindings` rather than a field on one, because the two are invalidated by different things. A tile index only means something against one grid, so re-slicing drops every binding; a colour means the same against any grid, so `clearBindings` leaves the palette alone and rebinding comes back to the colours already chosen. An ink also outlives `unbindRole` — it is the author's choice for that role, not a property of whatever tile happened to be there.
 
-A `CustomTile`'s tint, by contrast, is a field on the placement, because there it genuinely is per cell: two cells can hold the same sprite in different colours, exactly as they can hold it in different modes. Two parallel maps would have to be kept in step through a resize and an erase for no gain.
+A `CustomTile`'s tint, by contrast, is a field on the placement, because there it genuinely is per cell: two cells can hold the same sprite in different colours. Two parallel maps would have to be kept in step through a resize and an erase for no gain.
 
-Neither moved `STORED_VERSION`. A record written before tints existed has none, and no tint reads as the identity, so the field's absence already means what the old record meant — the same reason adding the mode did not move it either.
+Neither moved `STORED_VERSION`. A record written before tints existed has none, and no tint reads as the identity, so the field's absence already means what the old record meant — and layers did not move it either: a record with `customTiles` and no `layers` reads back as the default stack with those placements on its art layer, which is what it drew.
 
-**recolor** is its own tool, like **swap mode** and for the same reason: re-stamping a cell to change its ink would need the original tile still selected and would quietly replace the art if it were not. Unlike swapping it is idempotent, so it can be dragged across a row without flickering.
+**recolor** is its own tool because re-stamping a cell to change its ink would need the original tile still selected and would quietly replace the art if it were not. It is idempotent, so it can be dragged across a row without flickering.
 
 ### Fourteen roles: six required, eight optional
 
@@ -750,12 +721,12 @@ Packing also ships only what the skin uses, so a skin cut from a 500-tile sheet 
 - `core/` imports nothing from `host/`, `render/` or `editor/`, so it runs unchanged in Node tests, a terminal front end, or a solver.
 - `editor/` imports nothing from `host/`, and `host/` imports nothing from `editor/`. The two front ends meet only in `core/`, in `render/`, and in `levels/` on disk.
 - `render/colors.ts` and `render/tile-roles.ts` are leaves that import nothing; `render/sheet.ts` and `render/skin.ts` import only each other and those leaves. They exist so the level you draw looks like the level you play, and so the editor and the game agree on what a role is and how a sheet is cut, without the editor depending on the game's renderer.
-- The DOM lives only in `host/index.ts`, `editor/index.ts`, `editor/level-mode.ts`, `editor/skin-mode.ts`, `editor/colors-mode.ts`, `editor/swatches.ts` and `editor/publish.ts`. Everything under `editor/skin/` is pure or draws into a canvas it was handed — `atlas.ts` and `tinted-tiles.ts` create one, which is why `editor/tint.ts` holds the tint vocabulary separately: `document.ts` needs the type and must stay free of the DOM, exactly as it takes `CustomTileMode` from `render/custom-tiles.ts`.
+- The DOM lives only in `host/index.ts`, `editor/index.ts`, `editor/level-mode.ts`, `editor/skin-mode.ts`, `editor/colors-mode.ts`, `editor/swatches.ts` and `editor/publish.ts`. Everything under `editor/skin/` is pure or draws into a canvas it was handed — `atlas.ts` and `tinted-tiles.ts` create one, which is why `editor/tint.ts` holds the tint vocabulary separately: `document.ts` needs the type and must stay free of the DOM, exactly as it takes `BuiltInLayer` from `render/layers.ts`.
 - `localStorage` lives only in `editor/storage.ts`, which holds the keys and swallows the browser's failure modes. What goes in them is `editor/stored-state.ts`, which is pure and tested; the game stores nothing.
 - The file system lives only in `tools/level-export-plugin.ts`, which runs in the dev server and never in a browser or a build. It is also the only place a path is built from user input, which is why it derives the slug itself.
 - `tools/` may import `src/core/`, and nothing else may import `tools/`.
 - `editor/index.ts` is a mode switch and nothing else: it owns which panel is visible, routes keys and resizes to it, and builds the three things no single panel owns — the level autosave, the palette library and the publish panel.
-- A skin binds a role; a custom tile names a cell; a colour palette names neither. The first lives in `SkinDraft`, the second on `EditorDocument`, the third in `ColorPaletteLibrary`, and no module holds two of them.
+- A skin binds a role; a layer names cells; a colour palette names neither. The first lives in `SkinDraft`, the second on `EditorDocument`, the third in `ColorPaletteLibrary`, and no module holds two of them.
 - `editor/swatches.ts` is the one DOM module that is not a panel: it builds a list of colours and reads a click back off it, and knows nothing about what an action means. Both colour panels draw the same row and style it differently, which is the part worth sharing.
 
 ## Tests
@@ -779,7 +750,7 @@ Vitest is pinned to 2.x because 3+ requires Vite 6, and this project is on Vite 
 
 The suite is checked against deliberate regressions, not just written: dropping the bounds check in `getNextPosition`, ignoring what is behind a pushed box, replacing the flood fill with the raw open map, making `isSolved` vacuous, and letting undo run past the start each fail at least one test.
 
-The editor's pure modules are tested the same way, with XSB as the language in both directions — `parseXsbToDocument` in, `formatDocumentAsXsb` out, so a brush test is two boards. The custom tiles are the exception, because XSB cannot spell them: those assertions read the map.
+The editor's pure modules are tested the same way, with XSB as the language in both directions — `parseXsbToDocument` in, `formatDocumentAsXsb` out, so a brush test is two boards. The layers are the exception, because XSB cannot spell them: those assertions read the stack.
 
 `color-palettes.test.ts` leans on the identity contract as much as on the values — `toBe`, not `toEqual`, wherever an edit should have been a no-op, because that is what every panel's "redraw only on a real change" rests on. `hex.test.ts` asserts the widening in both directions, including the two things it must _not_ read: a format the program does not have (`#ffffffaa`) and a function call that is full of hex digits (`rgb(26, 28, 44)`).
 
@@ -787,7 +758,7 @@ The editor's pure modules are tested the same way, with XSB as the language in b
 
 `render/skin.test.ts` covers the seam between the editor's output and the game's input: that a manifest resolves to the columns the atlas was packed with, that an unbound wall piece falls back to the wall fill, that an unrecognised role still consumes its column, and that a column past the ones `roles` names still cuts. The atlas it tests against is two numbers, because its size is all a skin reads off the image.
 
-`skin/custom-tiles.test.ts` covers the other half of that seam the only way worth doing it: `formatCustomTilesFile` out, `parseCustomTileMap` — the game's own reader — back in, asserted against the packing. A column that survives the file is the whole promise, and asserting either side against a literal would not make it.
+`skin/layers.test.ts` covers the other half of that seam the only way worth doing it: `formatLayersFile` out, `parseLayerStack` — the game's own reader — back in, asserted against the packing. A column that survives the file is the whole promise, and asserting either side against a literal would not make it.
 
 `host/levels.ts` and `editor/publish.ts` are untested, and so is the export endpoint. They are I/O, and the one thing worth asserting about them — that only a level the game can load is ever written — is asserted by `parseStringToLevelState`, which the endpoint calls and `core/level.test.ts` already covers from both directions.
 

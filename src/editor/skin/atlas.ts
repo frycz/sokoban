@@ -5,7 +5,12 @@ import {
   getSheetGrid,
   getSourceTileRect,
 } from '../../render/sheet'
-import { getBoundRoles, getMissingRequiredRoles, type SkinDraft } from './skin'
+import {
+  getBoundRoles,
+  getMissingRequiredRoles,
+  getRoleTint,
+  type SkinDraft,
+} from './skin'
 import type { Tint } from '../tint'
 import { tintSheetTile } from './tinted-tiles'
 
@@ -91,7 +96,7 @@ export function packSkinAtlas(
   const columns: (AtlasTile & { readonly describe: () => string })[] = [
     ...getBoundRoles(draft).map((role) => ({
       tileIndex: draft.bindings[role],
-      tint: draft.tints[role],
+      tint: getRoleTint(draft, role),
       describe: () => `the tile bound to ${role}`,
     })),
     ...customColumns.map((column) => ({

@@ -87,11 +87,53 @@
         color: #7d8699;
         font-size: 12px;
       }
-      /* The mode buttons are a property of the place tool rather than tools of
-         their own, so the row says what they apply to. */
-      #preview-options .caption {
+      #layer-list {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      /* One row per layer, the selected one outlined: it is where the place,
+         erase and recolor tools paint. */
+      #layer-list .layer-row {
+        display: flex;
+        gap: 3px;
+        align-items: center;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        padding: 1px;
+        cursor: pointer;
+      }
+      #layer-list .layer-row.selected {
+        border-color: #63a8e0;
+        background: #1a2233;
+      }
+      #layer-list .layer-row button {
+        flex: 0 0 auto;
+        padding: 3px 7px;
+      }
+      #layer-list .layer-row input[type='text'] {
+        flex: 1 1 auto;
+        padding: 3px 6px;
+      }
+      /* Built-in layers are drawn from the level, so their name is a label
+         rather than a field, and quieter than an art layer's. */
+      #layer-list .layer-name {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 3px 6px;
+        color: #7d8699;
+        font-style: italic;
+      }
+      #layer-list .layer-count {
+        flex: 0 0 auto;
+        min-width: 2.5em;
+        text-align: right;
         color: #7d8699;
         font-size: 12px;
+      }
+      #layer-list .layer-row.hidden .layer-name,
+      #layer-list .layer-row.hidden input[type='text'] {
+        opacity: 0.45;
       }
       .zoom-level {
         min-width: 3em;
@@ -247,13 +289,22 @@
         color: #7d8699;
         font-size: 12px;
       }
-      #ground .clear {
+      #ground .clear,
+      #tile-background .clear {
         flex: 0 0 auto;
         padding: 5px 8px;
         color: #7d8699;
       }
-      #ground .clear:hover:enabled {
+      #ground .clear:hover:enabled,
+      #tile-background .clear:hover:enabled {
         color: #e07a7a;
+      }
+      /* The skin-wide tile background: what every role's transparent pixels are
+         filled with unless the role's own row sets a background of its own. */
+      #tile-background .background-swatch {
+        flex: 0 0 auto;
+        align-self: center;
+        color: #7d8699;
       }
       /* A colour's hex is there to be read and copied, so it is spelled out
          next to the chip rather than left to a tooltip. */
@@ -609,56 +660,30 @@
           <button
             type="button"
             data-tool="place"
-            title="Click or drag to put the selected tile on single cells"
+            title="Click or drag to put the selected tile on single cells of the selected layer"
           >
             2 place tile
           </button>
           <button
             type="button"
             data-tool="erase"
-            title="Click or drag to take placed tiles off again"
+            title="Click or drag to take placed tiles off the selected layer again"
           >
             3 erase tile
           </button>
           <button
             type="button"
-            data-tool="swap"
-            title="Click or drag over placed tiles to flip on top ⇄ overwrite, leaving the tile alone"
-          >
-            4 swap mode
-          </button>
-          <button
-            type="button"
             data-tool="recolor"
-            title="Click or drag over placed tiles to paint them with the current ink, leaving the tile and its mode alone"
+            title="Click or drag over placed tiles to paint them with the current ink, leaving the tile alone"
           >
-            5 recolor
+            4 recolor
           </button>
         </div>
         <div class="row" id="preview-options">
-          <span class="caption">new tile</span>
-          <button
-            type="button"
-            data-place-mode="onTop"
-            title="The skin still draws under the placed tile, so transparency shows it through"
-          >
-            on top
-          </button>
-          <button
-            type="button"
-            data-place-mode="overwrite"
-            title="The skin does not draw at all on that cell, so transparency is a hole"
-          >
-            overwrite
-          </button>
           <span class="shows">
             <label for="show-skin-tiles">
               <input id="show-skin-tiles" type="checkbox" checked />
               skin tiles
-            </label>
-            <label for="show-custom-tiles">
-              <input id="show-custom-tiles" type="checkbox" checked />
-              custom tiles
             </label>
           </span>
         </div>
@@ -683,6 +708,25 @@
         </div>
       </main>
       <aside>
+        <h2>Layers — top of the stack first</h2>
+        <div class="row">
+          <button
+            type="button"
+            id="layer-add"
+            title="A new empty art layer, directly above the selected one"
+          >
+            + layer
+          </button>
+          <button
+            type="button"
+            id="layer-show-all"
+            title="Show every layer again and leave solo"
+          >
+            show all
+          </button>
+        </div>
+        <div id="layer-list"></div>
+
         <h2>Tile sheet</h2>
         <input id="sheet-file" type="file" accept="image/*" />
         <div class="row">
@@ -794,6 +838,27 @@
             class="clear"
             id="ground-clear"
             title="Draw the level onto nothing again, so it keeps its silhouette against the page"
+          >
+            ×
+          </button>
+        </div>
+        <div class="row" id="tile-background">
+          <label for="tile-background-hex">tile bg</label>
+          <span class="background-swatch" id="tile-background-swatch">□</span>
+          <input
+            id="tile-background-hex"
+            class="hex"
+            type="text"
+            spellcheck="false"
+            placeholder="none"
+            aria-label="tile background hex"
+            title="A hex to fill every tile's transparent pixels with — a role's own background overrides it"
+          />
+          <button
+            type="button"
+            class="clear"
+            id="tile-background-clear"
+            title="Leave tiles without a background of their own see-through again"
           >
             ×
           </button>

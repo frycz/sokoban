@@ -1,9 +1,14 @@
 import { readHexColor } from '../render/colors'
-import type { CustomTileMode } from '../render/custom-tiles'
+import type { BuiltInLayer } from '../render/layers'
 import type { LevelAutosave } from './autosave'
 import type { ColorPaletteLibraryStore } from './color-palette-library'
 import { resolveColorPalette } from './color-palettes'
-import { NO_GROUND_COLOR } from './document'
+import {
+  NO_GROUND_COLOR,
+  getArtLayer,
+  getNextArtLayerId,
+  type EditorLayer,
+} from './document'
 import {
   commitFieldOnEnter,
   copyTextToClipboard,
@@ -23,12 +28,13 @@ import { createZoomControl } from './zoom'
 import { decodeStoredSkin, encodeStoredSkin } from './stored-state'
 import { getAtlasSize, packSkinAtlas } from './skin/atlas'
 import {
-  countOverwrites,
+  countPlacedTiles,
   countTinted,
-  formatCustomTilesFile,
-  packCustomTiles,
-  type CustomTilePacking,
-} from './skin/custom-tiles'
+  formatLayersFile,
+  hasLayersFile,
+  packLayers,
+  type LayerPacking,
+} from './skin/layers'
 import { createPalettePainter } from './skin/palette'
 import { createSkinPreviewPainter } from './skin/preview'
 import { ROLE_LABELS, getTopRoleAtPosition, type TileRole } from './skin/roles'
@@ -47,10 +53,12 @@ import {
   formatSkinManifest,
   getBoundRoles,
   getMissingRequiredRoles,
+  getRoleTint,
   isRoleBound,
   isSkinComplete,
   setRoleTint,
   setSheetSettings,
+  setSkinBackground,
   toSkinFileName,
   unbindRole,
   type SkinDraft,
@@ -102,22 +110,30 @@ const ROLE_GROUPS: readonly {
 /**
  * What a click on the preview means. Binding a role is the skin's own gesture —
  * every wall changes at once — and the other three are the escape hatch from
- * it: one cell, one tile, whatever the skin would have drawn there.
+ * it: one cell of one art layer, one tile, over or under whatever the skin
+ * draws there depending on where that layer sits in the stack.
  *
- * `swap` is how the on-top / overwrite choice is changed after the fact, and
- * `recolor` is how the ink is. Both exist as their own tools rather than being
- * folded into `place` because re-stamping a cell to change one of them would
- * need the original tile still selected, and would quietly replace the art if
- * it were not.
+ * `recolor` is how the ink is changed after the fact. It is its own tool rather
+ * than being folded into `place` because re-stamping a cell to change the ink
+ * would need the original tile still selected, and would quietly replace the
+ * art if it were not.
  */
-type PreviewTool = 'bind' | 'place' | 'erase' | 'swap' | 'recolor'
+type PreviewTool = 'bind' | 'place' | 'erase' | 'recolor'
 
 const TOOL_OF_KEY: Record<string, PreviewTool | undefined> = {
   '1': 'bind',
   '2': 'place',
   '3': 'erase',
-  '4': 'swap',
-  '5': 'recolor',
+  '4': 'recolor',
+}
+
+/** What a built-in layer is called in the layer list. */
+const BUILT_IN_LAYER_LABELS: Record<BuiltInLayer, string> = {
+  floor: 'floor',
+  walls: 'walls',
+  goals: 'goals',
+  boxes: 'boxes',
+  player: 'player',
 }
 
 /**
@@ -156,11 +172,12 @@ export function createSkinMode(
   const previewView = requireElement<HTMLElement>('#skin-preview-view')
   const previewCanvas = requireElement<HTMLCanvasElement>('#skin-preview')
   const previewTools = requireElement<HTMLElement>('#preview-tools')
-  const previewOptions = requireElement<HTMLElement>('#preview-options')
   const showSkinTilesInput =
     requireElement<HTMLInputElement>('#show-skin-tiles')
-  const showCustomTilesInput =
-    requireElement<HTMLInputElement>('#show-custom-tiles')
+  const layerList = requireElement<HTMLElement>('#layer-list')
+  const layerAddButton = requireElement<HTMLButtonElement>('#layer-add')
+  const layerShowAllButton =
+    requireElement<HTMLButtonElement>('#layer-show-all')
   const report = requireElement<HTMLElement>('#skin-report')
   const roleList = requireElement<HTMLElement>('#role-list')
   const inkControls = requireElement<HTMLElement>('#ink')
@@ -171,6 +188,15 @@ export function createSkinMode(
   const groundHexInput = requireElement<HTMLInputElement>('#ground-hex')
   const groundCopyButton = requireElement<HTMLButtonElement>('#ground-copy')
   const groundClearButton = requireElement<HTMLButtonElement>('#ground-clear')
+  const tileBackgroundSwatch = requireElement<HTMLElement>(
+    '#tile-background-swatch',
+  )
+  const tileBackgroundHexInput = requireElement<HTMLInputElement>(
+    '#tile-background-hex',
+  )
+  const tileBackgroundClearButton = requireElement<HTMLButtonElement>(
+    '#tile-background-clear',
+  )
   const paletteSelect = requireElement<HTMLSelectElement>('#skin-palette')
   const paletteSwatches = requireElement<HTMLElement>('#skin-palette-swatches')
   const paletteReport = requireElement<HTMLElement>('#skin-palette-report')
@@ -207,16 +233,20 @@ export function createSkinMode(
   // View settings, not part of the skin, so none of them is stored with the
   // draft — the same deal the level panel's selected brush gets.
   let previewTool: PreviewTool = 'bind'
-  // What the place tool writes. Each cell keeps its own copy, so changing this
-  // affects the next placement and never one already made — those are the swap
-  // tool's job.
-  let placeMode: CustomTileMode = 'onTop'
+  // The layer the place, erase and recolor tools work on, and the one a new
+  // layer goes above. Any layer can be selected, so a new layer can be put
+  // anywhere in the stack; only an art layer can be painted. Resolved against
+  // the document on every redraw, because an undo can take the layer away.
+  let selectedLayerId: string | null = null
+  // The editor's way of looking at the stack, never the level's: a hidden layer
+  // is still exported, and the game still draws it.
+  let hiddenLayerIds = new Set<string>()
+  let soloLayerId: string | null = null
   // The ink the next bind or placement is made with. View state like the brush
   // and the place mode: what it writes is kept — on the draft for a role, on the
   // cell for a placement — so the picker itself has nothing to remember.
   let ink: Tint = NO_TINT
   let showSkinTiles = true
-  let showCustomTiles = true
   let hoverPosition = -1
   let isPlacing = false
   // Whether the ground picker is mid-visit. A colour input fires `input` for
@@ -431,11 +461,12 @@ export function createSkinMode(
     background.type = 'text'
     background.className = 'hex background'
     background.spellcheck = false
-    background.placeholder = 'no bg'
+    // Empty inherits the skin-wide background, so the placeholder says which.
+    background.placeholder = draft.background ?? 'no bg'
     background.dataset.roleBackground = role
     background.value = roleTint.background ?? ''
     background.setAttribute('aria-label', `${ROLE_LABELS[role]} background hex`)
-    background.title = `A hex to fill ${ROLE_LABELS[role]}'s transparent pixels with, or empty for none`
+    background.title = `A hex to fill ${ROLE_LABELS[role]}'s transparent pixels with, or empty for the tile bg`
 
     line.append(applyInk, hex, copy, backgroundSwatch, background)
 
@@ -507,7 +538,7 @@ export function createSkinMode(
           if (rect.width > 0) {
             drawThumbnail(
               thumbnail,
-              getTintedTile(sheetImage, rect, draft.tints[role]),
+              getTintedTile(sheetImage, rect, getRoleTint(draft, role)),
             )
           }
         }
@@ -594,32 +625,222 @@ export function createSkinMode(
   }
 
   /**
+   * The selected layer, or the topmost art layer when nothing valid is — which
+   * is what a fresh level and an undone "add layer" both need: the tools should
+   * paint somewhere sensible without the author picking first.
+   */
+  function resolveSelectedLayer(): EditorLayer | null {
+    const { layers } = session.current()
+    const selected = layers.find((layer) => layer.id === selectedLayerId)
+
+    if (selected) {
+      return selected
+    }
+
+    const fallback =
+      [...layers].reverse().find((layer) => layer.kind === 'art') ??
+      layers[layers.length - 1] ??
+      null
+    selectedLayerId = fallback?.id ?? null
+
+    return fallback
+  }
+
+  function isLayerVisible(layerId: string): boolean {
+    return soloLayerId === null
+      ? !hiddenLayerIds.has(layerId)
+      : layerId === soloLayerId
+  }
+
+  /**
    * The hand-placed tiles, said in the sidebar rather than only drawn, because
-   * the two visibility switches mean the preview can be showing none of them.
+   * the layer switches mean the preview can be showing none of them — and what
+   * the tools are about to paint on, because a built-in or hidden layer is a
+   * stroke that does nothing visible.
    */
   function renderCustomTileReport(): void {
-    const { customTiles } = session.current()
-    const placed = customTiles.size
+    const { layers } = session.current()
+    const placed = countPlacedTiles(layers)
+    const isPainting = previewTool !== 'bind'
+    const selected = resolveSelectedLayer()
 
     if (previewTool === 'place' && selectedTileIndex === UNBOUND) {
       setMessage('Pick a tile from the sheet to place.', 'error')
     }
 
+    if (isPainting && selected?.kind === 'builtIn') {
+      setMessage(
+        `${BUILT_IN_LAYER_LABELS[selected.id]} is drawn from the level — select an art layer to paint on.`,
+        'error',
+      )
+    } else if (
+      isPainting &&
+      selected?.kind === 'art' &&
+      !isLayerVisible(selected.id)
+    ) {
+      setMessage(
+        `${selected.name} is hidden — strokes will not show.`,
+        'warning',
+      )
+    }
+
     if (placed === 0) {
-      if (previewTool === 'swap' || previewTool === 'recolor') {
+      if (previewTool === 'recolor') {
         setMessage('No custom tiles to change yet.', 'warning')
       }
 
       return
     }
 
-    const overwrites = countOverwrites(customTiles)
-    const tinted = countTinted(customTiles)
+    const artLayers = layers.filter((layer) => layer.kind === 'art').length
+    const tinted = countTinted(layers)
 
     setMessage(
-      `${placed} custom ${placed === 1 ? 'tile' : 'tiles'} placed, ${overwrites} overwriting the skin${tinted > 0 ? `, ${tinted} inked` : ''}${showCustomTiles ? '' : ' — hidden'}.`,
-      showCustomTiles ? 'ok' : 'warning',
+      `${placed} custom ${placed === 1 ? 'tile' : 'tiles'} on ${artLayers} art ${artLayers === 1 ? 'layer' : 'layers'}${tinted > 0 ? `, ${tinted} inked` : ''}.`,
+      'ok',
     )
+  }
+
+  /**
+   * Top of the stack first, as every layer panel lists them: the row above is
+   * drawn over the row below. Rebuilt from scratch on every redraw like the
+   * role list, and for the same reason the name field being typed in is put
+   * back as it was.
+   */
+  function renderLayerList(): void {
+    const { layers } = session.current()
+    const selected = resolveSelectedLayer()
+    const focused = document.activeElement
+    const typing =
+      focused instanceof HTMLInputElement && focused.dataset.layerName
+        ? {
+            layerId: focused.dataset.layerName,
+            text: focused.value,
+            caret: focused.selectionStart,
+          }
+        : null
+
+    layerList.replaceChildren()
+
+    const button = (
+      text: string,
+      title: string,
+      data: Record<string, string>,
+      isPressed?: boolean,
+      isDisabled?: boolean,
+    ): HTMLButtonElement => {
+      const element = document.createElement('button')
+      element.type = 'button'
+      element.textContent = text
+      element.title = title
+      Object.assign(element.dataset, data)
+
+      if (isPressed !== undefined) {
+        element.setAttribute('aria-pressed', String(isPressed))
+      }
+
+      element.disabled = isDisabled ?? false
+
+      return element
+    }
+
+    for (let index = layers.length - 1; index >= 0; index--) {
+      const layer = layers[index]
+      const row = document.createElement('div')
+      row.className = 'layer-row'
+      row.dataset.layerSelect = layer.id
+      row.classList.toggle('selected', layer.id === selected?.id)
+      row.classList.toggle('hidden', !isLayerVisible(layer.id))
+
+      const label =
+        layer.kind === 'builtIn' ? BUILT_IN_LAYER_LABELS[layer.id] : layer.name
+
+      row.append(
+        button(
+          hiddenLayerIds.has(layer.id) ? '○' : '●',
+          `${hiddenLayerIds.has(layer.id) ? 'Show' : 'Hide'} ${label} in the preview`,
+          { layerVisible: layer.id },
+        ),
+        button(
+          'S',
+          `Show ${label} alone`,
+          { layerSolo: layer.id },
+          soloLayerId === layer.id,
+        ),
+      )
+
+      if (layer.kind === 'builtIn') {
+        const name = document.createElement('span')
+        name.className = 'layer-name'
+        name.textContent = label
+        name.title =
+          'Built in — drawn from the level, so it can be moved but not painted'
+        row.append(name)
+      } else {
+        const name = document.createElement('input')
+        name.type = 'text'
+        name.spellcheck = false
+        name.value = layer.name
+        name.dataset.layerName = layer.id
+        name.setAttribute('aria-label', 'layer name')
+        row.append(name)
+
+        const count = document.createElement('span')
+        count.className = 'layer-count'
+        count.textContent = String(layer.tiles.size)
+        count.title = 'Tiles placed on this layer'
+        row.append(count)
+      }
+
+      row.append(
+        button(
+          '▲',
+          `Move ${label} up`,
+          { layerUp: layer.id },
+          undefined,
+          index === layers.length - 1,
+        ),
+        button(
+          '▼',
+          `Move ${label} down`,
+          { layerDown: layer.id },
+          undefined,
+          index === 0,
+        ),
+      )
+
+      if (layer.kind === 'art') {
+        row.append(
+          button('×', `Delete ${label} and its tiles`, {
+            layerRemove: layer.id,
+          }),
+        )
+      }
+
+      layerList.append(row)
+    }
+
+    layerShowAllButton.disabled =
+      soloLayerId === null && hiddenLayerIds.size === 0
+
+    if (typing === null) {
+      return
+    }
+
+    const restored = layerList.querySelector<HTMLInputElement>(
+      `input[data-layer-name="${typing.layerId}"]`,
+    )
+
+    if (!restored) {
+      return
+    }
+
+    restored.value = typing.text
+    restored.focus()
+
+    if (typing.caret !== null) {
+      restored.setSelectionRange(typing.caret, typing.caret)
+    }
   }
 
   function renderToolControls(): void {
@@ -627,15 +848,6 @@ export function createSkinMode(
       button.setAttribute(
         'aria-pressed',
         String(button.getAttribute('data-tool') === previewTool),
-      )
-    }
-
-    for (const button of previewOptions.querySelectorAll(
-      'button[data-place-mode]',
-    )) {
-      button.setAttribute(
-        'aria-pressed',
-        String(button.getAttribute('data-place-mode') === placeMode),
       )
     }
 
@@ -763,7 +975,8 @@ export function createSkinMode(
   function paintPreviewOnly(): void {
     paintPreview(session.current(), draft, sheetImage, {
       showSkinTiles,
-      showCustomTiles,
+      hiddenLayerIds,
+      soloLayerId,
       hoverPosition,
       zoom: previewZoom.current(),
     })
@@ -784,12 +997,14 @@ export function createSkinMode(
     renderToolControls()
     renderInkControls()
     renderGroundControls()
+    renderTileBackgroundControls()
     renderColorPalette()
     paletteZoom.syncControls()
     previewZoom.syncControls()
     paintPreviewOnly()
     renderReport()
     renderCustomTileReport()
+    renderLayerList()
 
     if (storageNote !== null) {
       setMessage(storageNote, 'warning')
@@ -891,14 +1106,14 @@ export function createSkinMode(
     paletteZoom.reset()
     previewZoom.reset()
     previewTool = 'bind'
-    placeMode = 'onTop'
+    selectedLayerId = null
+    hiddenLayerIds = new Set()
+    soloLayerId = null
     ink = NO_TINT
     selectedPaletteId = null
     paletteNote = null
     showSkinTiles = true
-    showCustomTiles = true
     showSkinTilesInput.checked = true
-    showCustomTilesInput.checked = true
     hoverPosition = -1
     isEditingGround = false
     savedDraft = draft
@@ -1043,19 +1258,23 @@ export function createSkinMode(
    * stroke, and the pointer handler splits it off before here.
    */
   function applyPlacementTool(position: number): boolean {
-    if (previewTool === 'erase') {
-      return session.eraseCustomTile(position)
+    const layer = resolveSelectedLayer()
+
+    // A built-in layer is drawn from the cells, so there is nothing in it to
+    // paint — the report already says so.
+    if (!layer || !getArtLayer(session.current(), layer.id)) {
+      return false
     }
 
-    if (previewTool === 'swap') {
-      return session.swapCustomTileMode(position)
+    if (previewTool === 'erase') {
+      return session.eraseCustomTile(layer.id, position)
     }
 
     if (previewTool === 'recolor') {
-      return session.recolorCustomTile(position, ink)
+      return session.recolorCustomTile(layer.id, position, ink)
     }
 
-    return session.placeCustomTile(position, selectedTileIndex, placeMode, ink)
+    return session.placeCustomTile(layer.id, position, selectedTileIndex, ink)
   }
 
   function selectTool(tool: PreviewTool): void {
@@ -1105,9 +1324,8 @@ export function createSkinMode(
       return
     }
 
-    // Only on a move onto a new cell, never on every event. Placing and erasing
-    // are idempotent and would not have cared, but swapping a mode is not: a
-    // pointer trembling inside one cell would flip it back and forth.
+    // Only on a move onto a new cell, never on every event: every placement
+    // tool is idempotent, so this only saves the redraw.
     if (isPlacing && applyPlacementTool(position)) {
       update()
 
@@ -1137,15 +1355,99 @@ export function createSkinMode(
     }
   })
 
-  previewOptions.addEventListener('click', (event) => {
-    const mode = (event.target as Element)
-      .closest('button[data-place-mode]')
-      ?.getAttribute('data-place-mode')
+  /**
+   * One listener for the whole list, like the role list: the rows are rebuilt
+   * on every redraw, so a listener on each would be thrown away with it. The
+   * row itself selects; the buttons in it do their own thing and do not.
+   */
+  layerList.addEventListener('click', (event) => {
+    const target = event.target as Element
+    const data = target.closest<HTMLButtonElement>('button')?.dataset
 
-    if (mode) {
-      placeMode = mode as CustomTileMode
+    if (data?.layerVisible) {
+      const id = data.layerVisible
+
+      if (hiddenLayerIds.has(id)) {
+        hiddenLayerIds.delete(id)
+      } else {
+        hiddenLayerIds.add(id)
+      }
+
+      soloLayerId = null
+      update()
+
+      return
+    }
+
+    if (data?.layerSolo) {
+      soloLayerId = soloLayerId === data.layerSolo ? null : data.layerSolo
+      update()
+
+      return
+    }
+
+    if (data?.layerUp || data?.layerDown) {
+      session.moveLayer(
+        (data.layerUp ?? data.layerDown)!,
+        data.layerUp ? 1 : -1,
+      )
+      update()
+
+      return
+    }
+
+    if (data?.layerRemove) {
+      session.removeArtLayer(data.layerRemove)
+      update()
+
+      return
+    }
+
+    const row = target.closest<HTMLElement>('[data-layer-select]')
+
+    if (
+      row?.dataset.layerSelect &&
+      row.dataset.layerSelect !== selectedLayerId
+    ) {
+      selectedLayerId = row.dataset.layerSelect
       update()
     }
+  })
+
+  // On `change` rather than per keystroke, so a rename is one undo entry. Enter
+  // commits it the way it does every other field in the editor.
+  layerList.addEventListener('change', (event) => {
+    const input = event.target
+
+    if (!(input instanceof HTMLInputElement) || !input.dataset.layerName) {
+      return
+    }
+
+    const name = input.value.trim()
+
+    if (name === '' || !session.renameArtLayer(input.dataset.layerName, name)) {
+      input.value =
+        getArtLayer(session.current(), input.dataset.layerName)?.name ?? ''
+    }
+
+    update()
+  })
+
+  layerList.addEventListener('keydown', commitFieldOnEnter)
+
+  layerAddButton.addEventListener('click', () => {
+    const id = getNextArtLayerId(session.current())
+
+    if (session.addArtLayer(resolveSelectedLayer()?.id ?? null)) {
+      selectedLayerId = id
+      update()
+    }
+  })
+
+  layerShowAllButton.addEventListener('click', () => {
+    hiddenLayerIds = new Set()
+    soloLayerId = null
+    update()
   })
 
   /**
@@ -1264,6 +1566,47 @@ export function createSkinMode(
     }
   })
 
+  /**
+   * The skin-wide tile background. The field is left alone while it has the
+   * caret, for the same reason the role fields are: a shorthand commits on the
+   * way past, and redrawing it would replace what is being typed.
+   */
+  function renderTileBackgroundControls(): void {
+    const { background } = draft
+    tileBackgroundSwatch.textContent = background === null ? '□' : '■'
+    tileBackgroundSwatch.style.color = background ?? ''
+    tileBackgroundClearButton.disabled = background === null
+
+    if (document.activeElement !== tileBackgroundHexInput) {
+      tileBackgroundHexInput.value = background ?? ''
+    }
+  }
+
+  // Live like the role fields: empty is none, a hex applies, anything else is
+  // still being typed and changes nothing yet.
+  tileBackgroundHexInput.addEventListener('input', () => {
+    const text = tileBackgroundHexInput.value.trim()
+    const background = text === '' ? null : parseHexColor(text)
+
+    if (text !== '' && background === null) {
+      return
+    }
+
+    draft = setSkinBackground(draft, background)
+    update()
+  })
+
+  tileBackgroundHexInput.addEventListener('change', () => {
+    tileBackgroundHexInput.value = draft.background ?? ''
+  })
+
+  tileBackgroundHexInput.addEventListener('keydown', commitFieldOnEnter)
+
+  tileBackgroundClearButton.addEventListener('click', () => {
+    draft = setSkinBackground(draft, null)
+    update()
+  })
+
   paletteSelect.addEventListener('change', () => {
     selectedPaletteId = paletteSelect.value
     paletteNote = null
@@ -1299,11 +1642,6 @@ export function createSkinMode(
 
   showSkinTilesInput.addEventListener('change', () => {
     showSkinTiles = showSkinTilesInput.checked
-    update()
-  })
-
-  showCustomTilesInput.addEventListener('change', () => {
-    showCustomTiles = showCustomTilesInput.checked
     update()
   })
 
@@ -1543,10 +1881,10 @@ export function createSkinMode(
    * the indices were picked against, so the atlas packer and `tiles.json` are
    * handed the same answer rather than each deriving one.
    */
-  function getCustomTilePacking(image: ImageBitmap): CustomTilePacking {
-    return packCustomTiles(
+  function getLayerPacking(image: ImageBitmap): LayerPacking {
+    return packLayers(
       draft,
-      session.current().customTiles,
+      session.current().layers,
       getSheetGrid(draft.sheet, image.width, image.height).tileCount,
     )
   }
@@ -1559,7 +1897,7 @@ export function createSkinMode(
     const canvas = packSkinAtlas(
       draft,
       sheetImage,
-      getCustomTilePacking(sheetImage).columns,
+      getLayerPacking(sheetImage).columns,
     )
     canvas.toBlob((blob) => {
       if (blob) {
@@ -1570,7 +1908,7 @@ export function createSkinMode(
 
   manifestButton.addEventListener('click', () => {
     const customColumns = sheetImage
-      ? getCustomTilePacking(sheetImage).columns.length
+      ? getLayerPacking(sheetImage).columns.length
       : 0
     const size = getAtlasSize(draft, customColumns)
     downloadBlob(
@@ -1597,21 +1935,20 @@ export function createSkinMode(
     }
 
     const editorDocument = session.current()
-    const packing = getCustomTilePacking(sheetImage)
+    const packing = getLayerPacking(sheetImage)
 
     return {
       manifest: formatSkinManifest(draft),
       atlasDataUrl: packSkinAtlas(draft, sheetImage, packing.columns).toDataURL(
         'image/png',
       ),
-      customTiles:
-        packing.placementOfPosition.size === 0
-          ? null
-          : formatCustomTilesFile(
-              editorDocument.width,
-              editorDocument.height,
-              packing,
-            ),
+      layers: !hasLayersFile(packing)
+        ? null
+        : formatLayersFile(
+            editorDocument.width,
+            editorDocument.height,
+            packing,
+          ),
     }
   }
 

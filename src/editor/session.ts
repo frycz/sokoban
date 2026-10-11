@@ -1,13 +1,15 @@
-import type { CustomTileMode } from '../render/custom-tiles'
 import {
+  addArtLayer,
   clearCustomTile,
   clearCustomTiles,
+  moveLayer,
   paintDocument,
   recolorCustomTile,
+  removeArtLayer,
+  renameArtLayer,
   resizeDocument,
   setCustomTile,
   setGroundColor,
-  swapCustomTileMode,
   type Brush,
   type EditorDocument,
 } from './document'
@@ -24,18 +26,26 @@ export type Session = {
   /** Returns whether the document changed. */
   paint: (position: number, brush: Brush) => boolean
   /**
-   * Skin mode's four placement tools. They coalesce per stroke like `paint`,
-   * because placing custom tiles is the same dragging gesture.
+   * Skin mode's three placement tools, each on one art layer. They coalesce per
+   * stroke like `paint`, because placing custom tiles is the same dragging
+   * gesture.
    */
   placeCustomTile: (
+    layerId: string,
     position: number,
     tileIndex: number,
-    mode: CustomTileMode,
     tint: Tint,
   ) => boolean
-  eraseCustomTile: (position: number) => boolean
-  swapCustomTileMode: (position: number) => boolean
-  recolorCustomTile: (position: number, tint: Tint) => boolean
+  eraseCustomTile: (layerId: string, position: number) => boolean
+  recolorCustomTile: (layerId: string, position: number, tint: Tint) => boolean
+  /**
+   * The layer stack's own edits, one undo entry each. `addArtLayer` puts the
+   * new layer directly above `belowId`.
+   */
+  addArtLayer: (belowId: string | null) => boolean
+  removeArtLayer: (layerId: string) => boolean
+  moveLayer: (layerId: string, direction: 1 | -1) => boolean
+  renameArtLayer: (layerId: string, name: string) => boolean
   /** Every placement at once — what a new or re-sliced sheet invalidates. */
   eraseAllCustomTiles: () => boolean
   /**
@@ -92,34 +102,29 @@ export function createSession(initial: EditorDocument): Session {
   }
 
   function placeCustomTile(
+    layerId: string,
     position: number,
     tileIndex: number,
-    mode: CustomTileMode,
     tint: Tint,
   ): boolean {
-    return stroke(setCustomTile(current(), position, tileIndex, mode, tint))
+    return stroke(setCustomTile(current(), layerId, position, tileIndex, tint))
   }
 
-  function eraseCustomTile(position: number): boolean {
-    return stroke(clearCustomTile(current(), position))
+  function eraseCustomTile(layerId: string, position: number): boolean {
+    return stroke(clearCustomTile(current(), layerId, position))
   }
 
-  function swapMode(position: number): boolean {
-    return stroke(swapCustomTileMode(current(), position))
+  function recolor(layerId: string, position: number, tint: Tint): boolean {
+    return stroke(recolorCustomTile(current(), layerId, position, tint))
   }
 
-  function recolor(position: number, tint: Tint): boolean {
-    return stroke(recolorCustomTile(current(), position, tint))
-  }
-
-  function eraseAllCustomTiles(): boolean {
-    const cleared = clearCustomTiles(current())
-
-    if (cleared === current()) {
+  /** One undo entry of its own, or nothing when the edit changed nothing. */
+  function commitIfChanged(edited: EditorDocument): boolean {
+    if (edited === current()) {
       return false
     }
 
-    commit(cleared)
+    commit(edited)
 
     return true
   }
@@ -129,15 +134,7 @@ export function createSession(initial: EditorDocument): Session {
   }
 
   function resize(width: number, height: number): boolean {
-    const resized = resizeDocument(current(), width, height)
-
-    if (resized === current()) {
-      return false
-    }
-
-    commit(resized)
-
-    return true
+    return commitIfChanged(resizeDocument(current(), width, height))
   }
 
   function undo(): boolean {
@@ -160,9 +157,15 @@ export function createSession(initial: EditorDocument): Session {
     paint,
     placeCustomTile,
     eraseCustomTile,
-    swapCustomTileMode: swapMode,
     recolorCustomTile: recolor,
-    eraseAllCustomTiles,
+    addArtLayer: (belowId) => commitIfChanged(addArtLayer(current(), belowId)),
+    removeArtLayer: (layerId) =>
+      commitIfChanged(removeArtLayer(current(), layerId)),
+    moveLayer: (layerId, direction) =>
+      commitIfChanged(moveLayer(current(), layerId, direction)),
+    renameArtLayer: (layerId, name) =>
+      commitIfChanged(renameArtLayer(current(), layerId, name)),
+    eraseAllCustomTiles: () => commitIfChanged(clearCustomTiles(current())),
     setGroundColor: setGround,
     resize,
     replace: commit,
