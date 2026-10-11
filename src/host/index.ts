@@ -58,6 +58,12 @@ const TICK_MS = 1000
  */
 const MOVE_ANIMATION_MS = 100
 
+/**
+ * How long a solved board stays on screen before the level-complete panel, so
+ * the last box is seen landing. The board takes no moves in the meantime.
+ */
+const COMPLETE_DELAY_MS = 500
+
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 
 function requireElement<T extends Element>(selector: string): T {
@@ -590,6 +596,22 @@ function completeLevel(): void {
   persist()
   updateHud()
 
+  window.setTimeout(() => {
+    // Left for the title or another level while the board was showing.
+    if (play !== current || gameSection.hidden) {
+      return
+    }
+
+    showCompleteOverlay(current, result, nextIndex, isLast)
+  }, COMPLETE_DELAY_MS)
+}
+
+function showCompleteOverlay(
+  current: Play,
+  result: LevelResult,
+  nextIndex: number,
+  isLast: boolean,
+): void {
   showOverlay({
     eyebrow: `Level ${current.index + 1} of ${levels.length}`,
     title: isLast ? 'Final level solved' : 'Level complete',
@@ -789,6 +811,11 @@ window.addEventListener('keydown', (event) => {
   if (devTools?.handleGameKey(event)) {
     event.preventDefault()
 
+    return
+  }
+
+  // Solved, and waiting out the pause before the panel.
+  if (play.solved) {
     return
   }
 
