@@ -148,12 +148,11 @@ in progress and **New Game** always — behind a confirmation when there is
 progress to lose. A new game plays the levels in `levels/order.json` order, one
 after another; solving one shows a level-complete panel over the board with its
 moves, pushes and time, and solving the last one leads to the finale, which
-lists every level's result and the totals. Escape on the board pauses: Resume,
-Restart level, Main menu.
+lists every level's result and the totals. Escape on the board saves and goes straight back to the title, where Continue picks the level up again.
 
 `index.ts` holds one `play` — the level, its history, its renderer and its
 clock — and it is null while no board is up. One `activeMenu` takes the keys
-whenever a menu is on screen, title, pause or panel alike, so the arrows drive
+whenever a menu is on screen, title or panel alike, so the arrows drive
 exactly one thing at a time.
 
 The renderer is built per level rather than once for the canvas, because the
@@ -165,7 +164,7 @@ procedural palette for a level that shipped without any.
 
 One `localStorage` key holds the level in progress — its slug, its path as
 LURD, and its time — and every solved level's result. It is written on every
-move, on pause, when the tab is hidden, and once a second while the clock
+move, on leaving the board, when the tab is hidden, and once a second while the clock
 runs, so a reload's Continue lands on the same level, in the same position,
 with the same undo stack, counts and clock. Solving a level moves the save on
 to the next one at once, so a reload from the level-complete panel does not
@@ -208,7 +207,7 @@ Undo is deliberately outside engine state. Because `step` is pure, keeping a sta
 
 Illegal moves are detected by identity: `step` returns the same object when nothing changed, so `next === current()` means the move was rejected and no history entry is recorded. That identity contract is load-bearing, and `step.test.ts` asserts it with `toBe` rather than `toEqual`.
 
-Keys: arrows or WASD to move, Z or U to undo, R to reset, Escape to pause. In menus, arrows or W/S to choose and Enter or Space to pick.
+Keys: arrows or WASD to move, Z or U to undo, R to reset, Escape for the title screen. In menus, arrows or W/S to choose and Enter or Space to pick.
 
 ## `render/` — dumb
 

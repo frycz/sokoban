@@ -202,22 +202,21 @@ function showTitle(): void {
   })
   items.push(...(devTools?.titleItems ?? []))
 
-  titlePrompt.hidden = true
+  titlePrompt.style.visibility = 'hidden'
   setMenu(titleMenuSlot, createMenu(items))
   showScreen(titleSection)
 }
 
 function confirmNewGame(): void {
-  titlePrompt.textContent = 'Start over? Your current progress will be lost.'
-  titlePrompt.hidden = false
+  titlePrompt.style.visibility = 'visible'
   setMenu(
     titleMenuSlot,
     createMenu(
       [
         { label: 'Cancel', action: showTitle },
-        { label: 'Start new game', action: startNewGame },
+        { label: 'Yes', action: startNewGame },
       ],
-      { onEscape: showTitle },
+      { onEscape: showTitle, initial: 1 },
     ),
   )
 }
@@ -388,7 +387,7 @@ function createStats(result: LevelResult): HTMLElement {
   return list
 }
 
-// --- The overlay: pause and level complete ----------------------------------
+// --- The overlay: level complete -------------------------------------------
 
 function showOverlay({
   eyebrow,
@@ -415,33 +414,6 @@ function hideOverlay(): void {
   overlayMenuSlot.replaceChildren()
   activeMenu = null
   syncClock()
-}
-
-function pause(): void {
-  if (!play) {
-    return
-  }
-
-  persistProgress()
-  showOverlay({
-    eyebrow: '',
-    title: 'Paused',
-    body: [],
-    menu: createMenu(
-      [
-        { label: 'Resume', action: hideOverlay },
-        {
-          label: 'Restart level',
-          action: () => {
-            hideOverlay()
-            runCommand({ type: 'reset' })
-          },
-        },
-        { label: 'Main menu', action: showTitle },
-      ],
-      { onEscape: hideOverlay },
-    ),
-  })
 }
 
 // --- The finale -------------------------------------------------------------
@@ -527,7 +499,7 @@ window.addEventListener('keydown', (event) => {
 
   if (event.key === 'Escape') {
     event.preventDefault()
-    pause()
+    showTitle()
 
     return
   }

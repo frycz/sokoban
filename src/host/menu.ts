@@ -24,7 +24,14 @@ const ACTIVATE_KEYS = new Set(['Enter', ' '])
  */
 export function createMenu(
   items: readonly MenuItem[],
-  { onEscape }: { readonly onEscape?: () => void } = {},
+  {
+    onEscape,
+    initial = 0,
+  }: {
+    readonly onEscape?: () => void
+    /** The item selected when the menu opens. */
+    readonly initial?: number
+  } = {},
 ): Menu {
   const element = document.createElement('div')
   element.className = 'menu'
@@ -57,7 +64,7 @@ export function createMenu(
     })
   }
 
-  select(0)
+  select(initial)
 
   function handleKey(event: KeyboardEvent): boolean {
     if (PREVIOUS_KEYS.has(event.key)) {

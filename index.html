@@ -103,8 +103,11 @@
         text-transform: uppercase;
         font-size: 12px;
       }
+      /* Tight, and eating into the card's gaps, so its reserved line stays
+         small while it is hidden. */
       .prompt {
-        margin: 8px 0 0;
+        margin: -4px 0;
+        line-height: 1;
         color: var(--gold);
       }
 
@@ -169,7 +172,8 @@
         flex-direction: column;
         gap: 6px;
         min-width: 240px;
-        margin-top: 20px;
+        margin-top: 10px;
+        margin-bottom: 10px;
       }
       .menu-item {
         font: inherit;
@@ -347,7 +351,10 @@
         </div>
         <h1 class="game-title">Sokoban</h1>
         <p class="tagline">Push every crate onto a goal.</p>
-        <p class="prompt" id="title-prompt" hidden></p>
+        <!-- Always laid out, only shown when asked, so the card never jumps. -->
+        <p class="prompt" id="title-prompt" style="visibility: hidden">
+          Start over? Your current progress will be lost.
+        </p>
         <div id="title-menu"></div>
       </div>
       <p class="keys">
