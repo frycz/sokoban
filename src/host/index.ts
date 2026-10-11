@@ -64,6 +64,9 @@ const MOVE_ANIMATION_MS = 100
  */
 const COMPLETE_DELAY_MS = 200
 
+/** The panel's fade in, slower than other changes of view so it arrives gently. */
+const COMPLETE_FADE_IN_MS = 300
+
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 
 function requireElement<T extends Element>(selector: string): T {
@@ -159,8 +162,11 @@ let viewUpdatePending = false
  *
  * The update must be the whole change, not just its first step: it runs a
  * frame later, and anything after this call would see the old view.
+ *
+ * `durationMs` overrides the stylesheet's timing for this one transition. Every
+ * call sets or clears it, so a slower one never leaks into the next.
  */
-function transitionView(update: () => void): void {
+function transitionView(update: () => void, durationMs?: number): void {
   if (
     inViewUpdate ||
     !('startViewTransition' in document) ||
@@ -169,6 +175,14 @@ function transitionView(update: () => void): void {
     update()
 
     return
+  }
+
+  const rootStyle = document.documentElement.style
+
+  if (durationMs === undefined) {
+    rootStyle.removeProperty('--view-transition-duration')
+  } else {
+    rootStyle.setProperty('--view-transition-duration', `${durationMs}ms`)
   }
 
   viewUpdatePending = true
@@ -602,7 +616,10 @@ function completeLevel(): void {
       return
     }
 
-    showCompleteOverlay(current, result, nextIndex, isLast)
+    transitionView(
+      () => showCompleteOverlay(current, result, nextIndex, isLast),
+      COMPLETE_FADE_IN_MS,
+    )
   }, COMPLETE_DELAY_MS)
 }
 
