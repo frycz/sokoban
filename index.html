@@ -257,9 +257,10 @@
         border-color: var(--accent);
         box-shadow: 0 0 0 1px var(--accent);
       }
-      .level-card:disabled {
+      /* Dimmed, but its frame left alone, so the selection still shows. */
+      .level-card.locked canvas,
+      .level-card.locked .name {
         opacity: 0.35;
-        cursor: default;
       }
       /* The miniature is the game's own renderer at card size, so the canvas
          gets a fixed box to measure itself against rather than a fluid one. */
@@ -280,8 +281,27 @@
         color: var(--gold);
       }
       .level-card .status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         color: var(--muted);
         font-size: 12px;
+      }
+      .level-card .padlock {
+        flex: 0 0 auto;
+      }
+      /* Playing a locked level: the lock and its label blink twice. */
+      .level-card .status.denied {
+        animation: denied 0.45s ease-in-out 2;
+      }
+      @keyframes denied {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.2;
+        }
       }
 
       /* The board. */

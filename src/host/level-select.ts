@@ -31,9 +31,15 @@ const UP_KEYS = new Set(['ArrowUp', 'w', 'W'])
 const DOWN_KEYS = new Set(['ArrowDown', 's', 'S'])
 const ACTIVATE_KEYS = new Set(['Enter', ' '])
 
+/** A padlock drawn in the text colour, so it dims and blinks with its label. */
+const PADLOCK_SVG = `<svg class="padlock" viewBox="0 0 10 12" width="10" height="12" aria-hidden="true">
+  <path d="M2.5 5.5V3.5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/>
+  <rect x="0.5" y="5.5" width="9" height="6" rx="1.2" fill="currentColor"/>
+</svg>`
+
 /**
  * One highlight serves keyboard and mouse alike, as in the menus. A locked
- * card is shown but can be neither selected nor played.
+ * card can be selected like any other, but playing it only blinks its lock.
  */
 export function createLevelGrid(
   cards: readonly LevelCard[],
@@ -60,7 +66,7 @@ export function createLevelGrid(
     button.setAttribute('role', 'menuitem')
     // Out of the tab order, as in the menus: Enter is the grid's own.
     button.tabIndex = -1
-    button.disabled = card.locked
+    button.classList.toggle('locked', card.locked)
 
     const miniature = document.createElement('canvas')
     const paint = createRenderer(
@@ -79,20 +85,25 @@ export function createLevelGrid(
 
     const status = document.createElement('span')
     status.className = 'status'
-    status.textContent = card.status
+
+    if (card.locked) {
+      status.innerHTML = PADLOCK_SVG
+    }
+
+    status.append(card.status)
 
     button.append(miniature, name, status)
 
     // Real pointer movement only: a grid scrolled by the arrows slides cards
     // under a still pointer, and that must not steal the highlight.
     button.addEventListener('mousemove', (event) => {
-      if ((event.movementX !== 0 || event.movementY !== 0) && !card.locked) {
+      if (event.movementX !== 0 || event.movementY !== 0) {
         select(index)
       }
     })
-    button.addEventListener('click', () => onPick(index))
+    button.addEventListener('click', () => activate(index))
 
-    return { button, repaint: () => paint(card.level.levelState) }
+    return { button, status, repaint: () => paint(card.level.levelState) }
   })
 
   element.append(...built.map((each) => each.button))
@@ -115,16 +126,31 @@ export function createLevelGrid(
     return index === -1 ? built.length : index
   }
 
-  /** Moves when the target is a card that can be played; stays otherwise. */
+  /** Moves when there is a card there; stays at the edges. */
   function moveBy(offset: number): void {
     const target = selected + offset
 
-    if (target < 0 || target >= cards.length || cards[target].locked) {
+    if (target < 0 || target >= cards.length) {
       return
     }
 
     select(target)
     reveal()
+  }
+
+  function activate(index: number): void {
+    if (!cards[index].locked) {
+      onPick(index)
+
+      return
+    }
+
+    // Restarted rather than ignored when it is already blinking, so every
+    // press gets its answer.
+    const { status } = built[index]
+    status.classList.remove('denied')
+    void status.offsetWidth
+    status.classList.add('denied')
   }
 
   function reveal(): void {
@@ -141,9 +167,7 @@ export function createLevelGrid(
     } else if (DOWN_KEYS.has(event.key)) {
       moveBy(countColumns())
     } else if (ACTIVATE_KEYS.has(event.key)) {
-      if (!cards[selected].locked) {
-        onPick(selected)
-      }
+      activate(selected)
     } else if (event.key === 'Escape') {
       onEscape()
     } else {
