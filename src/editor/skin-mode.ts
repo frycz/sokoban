@@ -19,6 +19,12 @@ import {
   type EditorMode,
 } from './dom'
 import { parseHexColor } from './hex'
+import {
+  canFollowLiveColors,
+  fetchLiveColors,
+  subscribeToLiveColors,
+  type LiveColors,
+} from './live-colors'
 import { readSwatchClick, renderSwatches, type SwatchAction } from './swatches'
 import { computeGridLayout, getPositionAtPixel } from './layout'
 import type { SkinExport } from './publish'
@@ -42,6 +48,7 @@ import {
   GROUND_KEY,
   ROLE_COLOR_KEYS,
   parseRoleColors,
+  type RoleColorImport,
 } from './skin/role-colors'
 import { getSheetGrid, getSourceTileRect } from '../render/sheet'
 import { computeSheetLayout, getTileIndexAtPixel } from './skin/palette-layout'
@@ -67,6 +74,13 @@ import { NO_TINT, readTint, type Tint } from './tint'
 import { createTintedTileCache } from './skin/tinted-tiles'
 
 const THUMBNAIL_SIZE = 24
+
+/**
+ * How long the live link has to be quiet before the next set it sends opens a
+ * new undo entry for the ground — longer than the gap between two sends while
+ * a colour is dragged in the picker, shorter than a deliberate second edit.
+ */
+const LIVE_BURST_MS = 1000
 
 /**
  * One action, because copying a hex is the whole of what this panel does with a
@@ -219,6 +233,11 @@ export function createSkinMode(
     '#role-colors-help-dialog',
   )
   const roleColorsKeys = requireElement<HTMLTableElement>('#role-colors-keys')
+  const liveColorsControls = requireElement<HTMLElement>('#live-colors')
+  const liveColorsFollowInput = requireElement<HTMLInputElement>(
+    '#live-colors-follow',
+  )
+  const liveColorsReport = requireElement<HTMLElement>('#live-colors-report')
 
   const getTintedTile = createTintedTileCache()
   const paintPalette = createPalettePainter(paletteView, paletteCanvas)
@@ -1766,11 +1785,20 @@ export function createSkinMode(
     }
   })
 
-  function addRoleColorsMessage(message: string, className: string): void {
+  function createRoleColorsLine(message: string, className: string): Element {
     const line = document.createElement('p')
     line.className = className
     line.textContent = message
-    roleColorsReport.append(line)
+
+    return line
+  }
+
+  function addRoleColorsMessage(
+    message: string,
+    className: string,
+    target: HTMLElement = roleColorsReport,
+  ): void {
+    target.append(createRoleColorsLine(message, className))
   }
 
   roleColorsImportButton.addEventListener('click', () => {
@@ -1783,23 +1811,18 @@ export function createSkinMode(
    * Every named role that is bound takes the colour and keeps its mode — the
    * same deal as typing into its hex field. An unbound role is skipped rather
    * than tinted, because binding stamps the current ink over whatever it had.
-   * The ground is the level's, so it goes through the session as one undo
-   * entry of its own.
+   * The ground is the level's, so it goes through the session; whether it opens
+   * an undo entry of its own is the caller's to say, because a paste is one
+   * action and the live link is a stream of them.
    *
-   * A clean import closes the dialog; anything skipped keeps it open with the
-   * reasons, so the author sees what did not land and can fix the text.
+   * Returns how many colours landed; what did not land is reported to
+   * `target`, and nothing is written there when everything did.
    */
-  roleColorsApplyButton.addEventListener('click', () => {
-    roleColorsReport.replaceChildren()
-
-    const parsed = parseRoleColors(roleColorsText.value)
-
-    if (parsed === null) {
-      addRoleColorsMessage('That is not a JSON object.', 'error')
-
-      return
-    }
-
+  function applyRoleColors(
+    parsed: RoleColorImport,
+    startsGroundStroke: boolean,
+    target: HTMLElement,
+  ): number {
     const unbound: TileRole[] = []
     let applied = 0
 
@@ -1814,7 +1837,10 @@ export function createSkinMode(
     }
 
     if (parsed.ground !== null) {
-      session.beginStroke()
+      if (startsGroundStroke) {
+        session.beginStroke()
+      }
+
       session.setGroundColor(parsed.ground)
       isEditingGround = false
       applied += 1
@@ -1822,26 +1848,11 @@ export function createSkinMode(
 
     update()
 
-    if (
-      parsed.unknownKeys.length === 0 &&
-      parsed.invalidKeys.length === 0 &&
-      unbound.length === 0 &&
-      applied > 0
-    ) {
-      roleColorsDialog.close()
-
-      return
-    }
-
-    addRoleColorsMessage(
-      `Applied ${applied} ${applied === 1 ? 'colour' : 'colours'}.`,
-      applied === 0 ? 'warning' : 'ok',
-    )
-
     if (unbound.length > 0) {
       addRoleColorsMessage(
         `Skipped, not bound: ${unbound.map((role) => ROLE_LABELS[role]).join(', ')}.`,
         'warning',
+        target,
       )
     }
 
@@ -1849,6 +1860,7 @@ export function createSkinMode(
       addRoleColorsMessage(
         `Not a hex: ${parsed.invalidKeys.join(', ')}.`,
         'error',
+        target,
       )
     }
 
@@ -1856,9 +1868,137 @@ export function createSkinMode(
       addRoleColorsMessage(
         `Unknown keys: ${parsed.unknownKeys.join(', ')}.`,
         'error',
+        target,
       )
     }
+
+    return applied
+  }
+
+  /**
+   * A clean import closes the dialog; anything skipped keeps it open with the
+   * reasons, so the author sees what did not land and can fix the text.
+   */
+  roleColorsApplyButton.addEventListener('click', () => {
+    roleColorsReport.replaceChildren()
+
+    const parsed = parseRoleColors(roleColorsText.value)
+
+    if (parsed === null) {
+      addRoleColorsMessage('That is not a JSON object.', 'error')
+
+      return
+    }
+
+    const applied = applyRoleColors(parsed, true, roleColorsReport)
+
+    if (roleColorsReport.childElementCount === 0 && applied > 0) {
+      roleColorsDialog.close()
+
+      return
+    }
+
+    roleColorsReport.prepend(
+      createRoleColorsLine(
+        `Applied ${applied} ${applied === 1 ? 'colour' : 'colours'}.`,
+        applied === 0 ? 'warning' : 'ok',
+      ),
+    )
   })
+
+  /**
+   * The live link: while it is on, every set the colour picker sends is applied
+   * the way a paste is, and the report under the toggle says which set it is
+   * and what did not land. Whether it is on is remembered, so a reload keeps
+   * following; what it last applied is not, because the skin and the level
+   * already saved the colours themselves.
+   *
+   * A drag in the picker sends a burst, and each one that moves the ground
+   * would be an undo entry of its own. So a burst folds into one entry, the
+   * way a drag of the ground picker does: a stroke opens only when the link has
+   * been quiet for a moment.
+   */
+  let isFollowingPicker =
+    canFollowLiveColors() && readStoredText('live') === 'on'
+  let lastLiveColorsAt = Number.NEGATIVE_INFINITY
+
+  function applyLiveColors(live: LiveColors): void {
+    if (!isFollowingPicker) {
+      return
+    }
+
+    liveColorsReport.replaceChildren()
+
+    const parsed = parseRoleColors(JSON.stringify(live.colors))
+
+    if (parsed === null) {
+      return
+    }
+
+    const now = performance.now()
+    const startsGroundStroke = now - lastLiveColorsAt > LIVE_BURST_MS
+    lastLiveColorsAt = now
+
+    const applied = applyRoleColors(
+      parsed,
+      startsGroundStroke,
+      liveColorsReport,
+    )
+    const name = [live.palette, live.set].filter((part) => part !== '')
+
+    liveColorsReport.prepend(
+      createRoleColorsLine(
+        `Following ${name.length > 0 ? name.join(' / ') : 'the picker'} — ${applied} ${applied === 1 ? 'colour' : 'colours'}.`,
+        applied === 0 ? 'warning' : 'ok',
+      ),
+    )
+  }
+
+  function renderLiveColorsControls(): void {
+    liveColorsControls.hidden = !canFollowLiveColors()
+    liveColorsFollowInput.checked = isFollowingPicker
+
+    if (!isFollowingPicker) {
+      liveColorsReport.replaceChildren()
+    }
+  }
+
+  async function catchUpWithPicker(): Promise<void> {
+    const live = await fetchLiveColors()
+
+    if (live === null) {
+      if (isFollowingPicker) {
+        liveColorsReport.replaceChildren(
+          createRoleColorsLine(
+            'Waiting for the picker — turn on its live link.',
+            'warning',
+          ),
+        )
+      }
+
+      return
+    }
+
+    applyLiveColors(live)
+  }
+
+  liveColorsFollowInput.addEventListener('change', () => {
+    isFollowingPicker = liveColorsFollowInput.checked
+    writeStoredText('live', isFollowingPicker ? 'on' : 'off')
+    lastLiveColorsAt = Number.NEGATIVE_INFINITY
+    renderLiveColorsControls()
+
+    if (isFollowingPicker) {
+      void catchUpWithPicker()
+    }
+  })
+
+  subscribeToLiveColors(applyLiveColors)
+  renderLiveColorsControls()
+
+  if (isFollowingPicker) {
+    void catchUpWithPicker()
+  }
 
   // Built from the parser's own table, so the help cannot list a key the
   // import does not take.

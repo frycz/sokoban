@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import { levelExportPlugin } from './tools/level-export-plugin'
+import { liveColorsPlugin } from './tools/live-colors-plugin'
 
 /**
  * The game is the product; the level editor is an internal tool. They share
@@ -13,7 +14,8 @@ export default defineConfig(({ mode }) => {
     // The editor's Export to levels/ writes into the working tree, so it is the
     // dev server's job and the plugin is serve-only. Both dev servers get it:
     // the editor runs on the same config, just a different port and entry.
-    plugins: [levelExportPlugin()],
+    // The live link from the colour picker is serve-only for the same reason.
+    plugins: [levelExportPlugin(), liveColorsPlugin()],
     build: {
       outDir: isEditor ? 'dist-editor' : 'dist',
       rollupOptions: {

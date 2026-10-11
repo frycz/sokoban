@@ -488,6 +488,10 @@ The `level` slice is the one both modes write, because both now edit the documen
 
 The `palettes` slice is the same arrangement one step further out: colours mode edits it and skin mode reads it, so it lives in `color-palette-library.ts` and is handed to both. It compares by identity rather than by text, like the skin's baseline does — every edit in `color-palettes.ts` returns the library it was given when it was a no-op, so identity is exact and a redraw that changed nothing costs a pointer compare.
 
+### Live link from the colour picker
+
+The theme colour picker (`../theme-color-picker`) can push its open set to the editor so role colours follow it without copy and paste. The picker is another origin, so it posts to `/api/live-colors` on the editor's dev server; `tools/live-colors-plugin.ts` keeps the last set (for a GET from a page that opens later) and relays it down the HMR socket as a `live-colors` event. `editor/live-colors.ts` is the page's end, and skin mode's **follow colour picker** toggle applies each set through the same path as the Import colors from JSON dialog. The toggle is remembered in the `live` slice. A burst of sets from a drag folds into one undo entry for the ground. Dev only: a built editor has no `import.meta.hot` and hides the toggle.
+
 The undo stack does not persist. A reload is a new session, and the document is the work.
 
 #### The level is stored as XSB, with `-` for floor
