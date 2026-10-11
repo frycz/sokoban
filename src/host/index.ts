@@ -387,7 +387,7 @@ function createStats(result: LevelResult): HTMLElement {
   return list
 }
 
-// --- The overlay: level complete -------------------------------------------
+// --- The overlay: level complete and restart --------------------------------
 
 function showOverlay({
   eyebrow,
@@ -414,6 +414,36 @@ function hideOverlay(): void {
   overlayMenuSlot.replaceChildren()
   activeMenu = null
   syncClock()
+}
+
+/** Restarting throws away every move, so it asks first — unless there are none. */
+function confirmRestart(): void {
+  if (!play || play.history.moveCount() === 0) {
+    return
+  }
+
+  const prompt = document.createElement('p')
+  prompt.className = 'prompt'
+  prompt.textContent = 'Your moves on this level will be lost.'
+
+  showOverlay({
+    eyebrow: '',
+    title: 'Restart level?',
+    body: [prompt],
+    menu: createMenu(
+      [
+        { label: 'Cancel', action: hideOverlay },
+        {
+          label: 'Yes',
+          action: () => {
+            hideOverlay()
+            runCommand({ type: 'reset' })
+          },
+        },
+      ],
+      { onEscape: hideOverlay, initial: 1 },
+    ),
+  })
 }
 
 // --- The finale -------------------------------------------------------------
@@ -517,6 +547,13 @@ window.addEventListener('keydown', (event) => {
   }
 
   event.preventDefault()
+
+  if (command.type === 'reset') {
+    confirmRestart()
+
+    return
+  }
+
   runCommand(command)
 })
 

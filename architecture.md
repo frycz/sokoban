@@ -148,11 +148,11 @@ in progress and **New Game** always — behind a confirmation when there is
 progress to lose. A new game plays the levels in `levels/order.json` order, one
 after another; solving one shows a level-complete panel over the board with its
 moves, pushes and time, and solving the last one leads to the finale, which
-lists every level's result and the totals. Escape on the board saves and goes straight back to the title, where Continue picks the level up again.
+lists every level's result and the totals. Escape on the board saves and goes straight back to the title, where Continue picks the level up again. R asks before restarting a level that has moves to lose.
 
 `index.ts` holds one `play` — the level, its history, its renderer and its
 clock — and it is null while no board is up. One `activeMenu` takes the keys
-whenever a menu is on screen, title or panel alike, so the arrows drive
+whenever a menu is on screen, title, panel or restart confirmation alike, so the arrows drive
 exactly one thing at a time.
 
 The renderer is built per level rather than once for the canvas, because the
