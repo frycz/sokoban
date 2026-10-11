@@ -215,6 +215,8 @@ Keys: arrows or WASD to move, Z or U to undo, R to reset, Escape for the title s
 
 Full redraw every time is deliberate: it keeps the renderer a pure function of state with nothing to invalidate, and a Sokoban board is small enough that the cost is irrelevant.
 
+`render` also takes an optional `Motion` — the state the last move left and a progress from 0 to 1 — and draws the player and a pushed box that far along from their old cells. The renderer has no clock: `host/index.ts` owns the 100 ms slide, its easing and its `requestAnimationFrame` loop, starts one for every move and undo, skips it for a reset or under `prefers-reduced-motion`, and snaps the pieces into place when a key arrives mid-slide.
+
 | File            | Role                                                                                                               |
 | --------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `canvas.ts`     | the two painters — tiles when there is a skin, flat colour when there is not — over the level's ground             |

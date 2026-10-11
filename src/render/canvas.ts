@@ -18,6 +18,21 @@ import {
 } from './skin'
 import { getWallRole, type TileRole } from './tile-roles'
 
+/**
+ * A move in flight: the state it left and how far along it is, 0 to 1. The
+ * board is the same at both ends, so only the player and a pushed box are drawn
+ * between cells; the caller owns the clock and the easing.
+ */
+export type Motion = {
+  readonly from: LevelState
+  readonly progress: number
+}
+
+type Point = { readonly x: number; readonly y: number }
+
+/** Where each movable piece is drawn this frame, by its cell in the state. */
+type PiecePoint = (position: number) => Point
+
 type BoardLayout = {
   readonly tile: number
   readonly originX: number
@@ -41,30 +56,96 @@ type BoardLayout = {
  * `groundColor` is the colour under the whole board, or null for none. Like the
  * tiles it is the level's own, fixed for its lifetime, which is why it is a
  * constructor argument rather than something read off the state.
+ *
+ * `motion` is the one thing that is not state: without it the pieces sit on
+ * their cells, with it they are drawn part way from where `motion.from` had
+ * them.
  */
 export function createRenderer(
   canvas: HTMLCanvasElement,
   skin: Skin | null = null,
   layers: LayerStack = DEFAULT_LAYER_STACK,
   groundColor: string | null = null,
-): (levelState: LevelState) => void {
+): (levelState: LevelState, motion?: Motion) => void {
   const context = canvas.getContext('2d')
 
   if (!context) {
     throw new Error('Canvas 2D context is unavailable')
   }
 
-  return function render(levelState: LevelState): void {
+  return function render(levelState: LevelState, motion?: Motion): void {
     const layout = prepareCanvas(canvas, context, levelState.level, groundColor)
+    const piecePoint = createPiecePoint(levelState, layout, motion)
 
     if (skin) {
       context.imageSmoothingEnabled = !skin.isPixelated
-      drawSkinnedBoard(context, levelState, layout, skin, layers, groundColor)
+      drawSkinnedBoard(
+        context,
+        levelState,
+        layout,
+        piecePoint,
+        skin,
+        layers,
+        groundColor,
+      )
 
       return
     }
 
-    drawProceduralBoard(context, levelState, layout, groundColor)
+    drawProceduralBoard(context, levelState, layout, piecePoint, groundColor)
+  }
+}
+
+/**
+ * The player came from wherever `motion.from` had it, and a pushed box from the
+ * one cell `from` had a box on that the state does not — a push moves exactly
+ * one. Undo is the same move backwards, so it needs nothing of its own.
+ */
+function createPiecePoint(
+  levelState: LevelState,
+  layout: BoardLayout,
+  motion: Motion | undefined,
+): PiecePoint {
+  const { level } = levelState
+  const atCell = (position: number): Point =>
+    getTopLeft(level, layout, position)
+
+  if (!motion || motion.progress >= 1) {
+    return atCell
+  }
+
+  const { from, progress } = motion
+  const origins = new Map<number, number>([
+    [levelState.playerCurrentPosition, from.playerCurrentPosition],
+  ])
+  const left = [...from.boxPositions].filter(
+    (box) => !levelState.boxPositions.has(box),
+  )
+  const arrived = [...levelState.boxPositions].filter(
+    (box) => !from.boxPositions.has(box),
+  )
+
+  arrived.forEach((box, index) => {
+    if (index < left.length) {
+      origins.set(box, left[index])
+    }
+  })
+
+  return (position) => {
+    const to = atCell(position)
+    const origin = origins.get(position)
+
+    if (origin === undefined) {
+      return to
+    }
+
+    const start = atCell(origin)
+
+    // Whole pixels, so a pixel-art skin does not smear between cells.
+    return {
+      x: Math.round(start.x + (to.x - start.x) * progress),
+      y: Math.round(start.y + (to.y - start.y) * progress),
+    }
   }
 }
 
@@ -124,7 +205,7 @@ function getTopLeft(
   level: Level,
   layout: BoardLayout,
   position: number,
-): { readonly x: number; readonly y: number } {
+): Point {
   return {
     x: layout.originX + getPositionX(level, position) * layout.tile,
     y: layout.originY + getPositionY(level, position) * layout.tile,
@@ -142,6 +223,7 @@ function drawSkinnedBoard(
   context: CanvasRenderingContext2D,
   levelState: LevelState,
   layout: BoardLayout,
+  piecePoint: PiecePoint,
   skin: Skin,
   layers: LayerStack,
   groundColor: string | null,
@@ -149,7 +231,10 @@ function drawSkinnedBoard(
   const { level, playerCurrentPosition, boxPositions } = levelState
 
   const drawRole = (role: TileRole, position: number): void => {
-    const { x, y } = getTopLeft(level, layout, position)
+    drawRoleAt(role, getTopLeft(level, layout, position))
+  }
+
+  const drawRoleAt = (role: TileRole, { x, y }: Point): void => {
     const rect = getSkinTileRect(skin, role)
 
     if (!rect) {
@@ -210,12 +295,15 @@ function drawSkinnedBoard(
         return
       case 'boxes':
         for (const box of boxPositions) {
-          drawRole(level.goalPositions.has(box) ? 'boxOnGoal' : 'box', box)
+          drawRoleAt(
+            level.goalPositions.has(box) ? 'boxOnGoal' : 'box',
+            piecePoint(box),
+          )
         }
 
         return
       case 'player':
-        drawRole('player', playerCurrentPosition)
+        drawRoleAt('player', piecePoint(playerCurrentPosition))
 
         return
     }
@@ -261,6 +349,7 @@ function drawProceduralBoard(
   context: CanvasRenderingContext2D,
   levelState: LevelState,
   layout: BoardLayout,
+  piecePoint: PiecePoint,
   groundColor: string | null,
 ): void {
   const { level, playerCurrentPosition, boxPositions } = levelState
@@ -297,7 +386,7 @@ function drawProceduralBoard(
   }
 
   for (const box of boxPositions) {
-    const { x, y } = getTopLeft(level, layout, box)
+    const { x, y } = piecePoint(box)
     const padding = tile * 0.14
     context.fillStyle = level.goalPositions.has(box)
       ? COLORS.boxDone
@@ -313,7 +402,7 @@ function drawProceduralBoard(
     context.fill()
   }
 
-  const { x, y } = getTopLeft(level, layout, playerCurrentPosition)
+  const { x, y } = piecePoint(playerCurrentPosition)
   context.fillStyle = COLORS.player
   context.beginPath()
   context.arc(x + tile / 2, y + tile / 2, tile * 0.33, 0, Math.PI * 2)

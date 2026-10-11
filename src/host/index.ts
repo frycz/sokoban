@@ -1,6 +1,6 @@
 import { isSolved } from '../core/rules'
 import type { LevelState } from '../core/types'
-import { createRenderer } from '../render/canvas'
+import { createRenderer, type Motion } from '../render/canvas'
 import {
   createHistory,
   restoreHistory,
@@ -51,6 +51,15 @@ const BINDINGS: Record<string, Command> = {
 /** How often the clock on screen ticks, and the save catches up with it. */
 const TICK_MS = 1000
 
+/**
+ * How long the player and a pushed box take to slide to their next cell. A key
+ * pressed mid-slide snaps the pieces to where they were going and starts the
+ * next one, so input never waits on the animation.
+ */
+const MOVE_ANIMATION_MS = 100
+
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector)
 
@@ -93,7 +102,7 @@ type Play = {
   readonly index: number
   readonly level: PlayableLevel
   readonly history: History
-  readonly render: (levelState: LevelState) => void
+  readonly render: (levelState: LevelState, motion?: Motion) => void
   /** Time banked on this level, not counting the stretch now running. */
   timeMs: number
   /** When the running stretch began, or null while the clock is stopped. */
@@ -112,6 +121,11 @@ let save: Save = { current: null, completed: [] }
 
 /** The level on the board, or null when there is none. */
 let play: Play | null = null
+
+/** The slide in progress on the board, or null while the pieces are at rest. */
+let slide: { readonly from: LevelState; readonly startedAt: number } | null =
+  null
+let slideFrame = 0
 
 /**
  * The menu the arrow keys drive, or null while they drive the board. Exactly
@@ -401,6 +415,8 @@ function startLevel(
     return
   }
 
+  stopSlide()
+
   const level = levels[index]
   const restored = restoreHistory(level.levelState, lurd)
 
@@ -428,7 +444,54 @@ function updateGame(): void {
 
   // The HUD first, so the board measures itself against its final layout.
   updateHud()
-  play.render(play.history.current())
+  drawBoard()
+}
+
+/**
+ * Draws the board, part way through the slide if one is running, and asks for
+ * the next frame until it lands. Safe to call at any time — a resize mid-slide
+ * just draws the same frame at the new size.
+ */
+function drawBoard(): void {
+  cancelAnimationFrame(slideFrame)
+
+  if (!play) {
+    return
+  }
+
+  const current = play.history.current()
+
+  if (!slide) {
+    play.render(current)
+
+    return
+  }
+
+  const elapsed = (performance.now() - slide.startedAt) / MOVE_ANIMATION_MS
+  const progress = Math.min(1, elapsed)
+  play.render(current, { from: slide.from, progress: easeOutCubic(progress) })
+
+  if (progress >= 1) {
+    slide = null
+
+    return
+  }
+
+  slideFrame = requestAnimationFrame(drawBoard)
+}
+
+function startSlide(from: LevelState): void {
+  slide = reducedMotion.matches ? null : { from, startedAt: performance.now() }
+}
+
+function stopSlide(): void {
+  cancelAnimationFrame(slideFrame)
+  slide = null
+}
+
+/** Quick off the mark and gentle on arrival, so a slide reads as settling. */
+function easeOutCubic(progress: number): number {
+  return 1 - (1 - progress) ** 3
 }
 
 function updateHud(): void {
@@ -458,8 +521,21 @@ function statPair(label: string, value: number | string): (Node | string)[] {
 }
 
 function runCommand(command: Command): void {
-  if (!play?.history.run(command)) {
+  if (!play) {
     return
+  }
+
+  const previous = play.history.current()
+
+  if (!play.history.run(command)) {
+    return
+  }
+
+  // A move or an undo is one step either way; a reset jumps, so it does not slide.
+  if (command.type === 'reset') {
+    stopSlide()
+  } else {
+    startSlide(previous)
   }
 
   updateGame()
