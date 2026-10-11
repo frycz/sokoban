@@ -41,6 +41,10 @@ const PADLOCK_SVG = `<svg class="padlock" viewBox="0 0 10 12" width="10" height=
  * One highlight serves keyboard and mouse alike, as in the menus. A locked
  * card can be selected like any other, but playing it only blinks its lock.
  */
+function prefersReducedMotion(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
 export function createLevelGrid(
   cards: readonly LevelCard[],
   {
@@ -141,7 +145,7 @@ export function createLevelGrid(
     }
 
     select(target)
-    reveal()
+    reveal(prefersReducedMotion() ? 'instant' : 'smooth')
   }
 
   function activate(index: number): void {
@@ -159,8 +163,12 @@ export function createLevelGrid(
     status.classList.add('denied')
   }
 
-  function reveal(): void {
-    built[selected]?.button.scrollIntoView({ block: 'nearest' })
+  /**
+   * Instant by default, for the grid opening on its card; the arrows glide
+   * instead, so the view never jumps a row under the player's eyes.
+   */
+  function reveal(behavior: ScrollBehavior = 'instant'): void {
+    built[selected]?.button.scrollIntoView({ block: 'nearest', behavior })
   }
 
   function handleKey(event: KeyboardEvent): boolean {
