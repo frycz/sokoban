@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  countUnlocked,
   formatDuration,
   parseSave,
   resolveResume,
@@ -74,6 +75,25 @@ describe('resolveResume', () => {
 
   it('has nothing to continue when every level is solved', () => {
     expect(resolveResume(SAVE, ['alpha'])).toBeNull()
+  })
+})
+
+describe('countUnlocked', () => {
+  it('unlocks the solved levels and the one after the furthest', () => {
+    expect(countUnlocked(SAVE, ['alpha', 'bravo', 'charlie'])).toBe(2)
+  })
+
+  it('follows the furthest solved level when the order changed', () => {
+    expect(countUnlocked(SAVE, ['bravo', 'charlie', 'alpha', 'delta'])).toBe(4)
+  })
+
+  it('stops at the last level', () => {
+    expect(countUnlocked(SAVE, ['bravo', 'alpha'])).toBe(2)
+  })
+
+  it('unlocks nothing before the first level is solved', () => {
+    expect(countUnlocked({ current: null, completed: [] }, ['alpha'])).toBe(0)
+    expect(countUnlocked(SAVE, ['bravo', 'charlie'])).toBe(0)
   })
 })
 

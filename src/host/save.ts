@@ -94,6 +94,24 @@ export function resolveResume(
 }
 
 /**
+ * How many levels, from the first, Select Level lets the player pick: every
+ * level up to the furthest one solved, and the one after it. Zero when nothing
+ * still in the campaign has been solved.
+ */
+export function countUnlocked(save: Save, slugs: readonly string[]): number {
+  const solved = new Set(save.completed.map((result) => result.slug))
+  let unlocked = 0
+
+  slugs.forEach((slug, index) => {
+    if (solved.has(slug)) {
+      unlocked = Math.min(index + 2, slugs.length)
+    }
+  })
+
+  return unlocked
+}
+
+/**
  * `localStorage` can be missing or throw — a private window, blocked site data
  * — and the game has to play regardless, just without remembering.
  */

@@ -8,9 +8,11 @@ import {
   type History,
 } from './history'
 import { loadLevelCatalog, type PlayableLevel } from './levels'
+import { createLevelGrid, type LevelCard, type LevelGrid } from './level-select'
 import type { DevTools } from './dev-tools'
 import { createMenu, type Menu, type MenuItem } from './menu'
 import {
+  countUnlocked,
   formatDuration,
   readStoredSave,
   resolveResume,
@@ -62,6 +64,8 @@ function requireElement<T extends Element>(selector: string): T {
 const titleSection = requireElement<HTMLElement>('#title')
 const titlePrompt = requireElement<HTMLElement>('#title-prompt')
 const titleMenuSlot = requireElement<HTMLElement>('#title-menu')
+const levelsSection = requireElement<HTMLElement>('#levels')
+const levelsGridSlot = requireElement<HTMLElement>('#levels-grid')
 const gameSection = requireElement<HTMLElement>('#game')
 const hudLevel = requireElement<HTMLElement>('#hud-level')
 const hudStats = requireElement<HTMLElement>('#hud-stats')
@@ -78,7 +82,12 @@ const finishedResults = requireElement<HTMLTableElement>('#finished-results')
 const finishedMenuSlot = requireElement<HTMLElement>('#finished-menu')
 
 /** Every screen; showing one hides the rest. The dev build adds its own. */
-const screens: HTMLElement[] = [titleSection, gameSection, finishedSection]
+const screens: HTMLElement[] = [
+  titleSection,
+  levelsSection,
+  gameSection,
+  finishedSection,
+]
 
 type Play = {
   readonly index: number
@@ -90,6 +99,11 @@ type Play = {
   /** When the running stretch began, or null while the clock is stopped. */
   runningSince: number | null
   solved: boolean
+  /**
+   * A level already solved, picked again from Select Level. It leaves the
+   * campaign where it was: Continue still goes to the level in progress.
+   */
+  readonly replay: boolean
 }
 
 /** The campaign, in `levels/order.json` order. */
@@ -161,7 +175,7 @@ function persist(): void {
 
 /** The level in progress into the save, moves and clock included. */
 function persistProgress(): void {
-  if (!play || play.solved) {
+  if (!play || play.solved || play.replay) {
     return
   }
 
@@ -183,10 +197,7 @@ function showTitle(): void {
   play = null
   hideOverlay()
 
-  const resume = resolveResume(
-    save,
-    levels.map((level) => level.slug),
-  )
+  const resume = resolveResume(save, getSlugs())
   const items: MenuItem[] = []
 
   if (resume) {
@@ -194,6 +205,10 @@ function showTitle(): void {
       label: 'Continue',
       action: () => startLevel(resume.index, resume.lurd, resume.timeMs),
     })
+  }
+
+  if (countUnlocked(save, getSlugs()) > 0) {
+    items.push({ label: 'Select Level', action: showLevelSelect })
   }
 
   items.push({
@@ -205,6 +220,70 @@ function showTitle(): void {
   titlePrompt.style.visibility = 'hidden'
   setMenu(titleMenuSlot, createMenu(items))
   showScreen(titleSection)
+}
+
+function getSlugs(): string[] {
+  return levels.map((level) => level.slug)
+}
+
+// --- Level select -----------------------------------------------------------
+
+/** The level select on screen, kept so a resize can redraw its miniatures. */
+let levelGrid: LevelGrid | null = null
+
+/**
+ * Every level, with the solved ones and the one after the furthest open to
+ * pick. Opens on the level Continue would play, or the furthest open one once
+ * the campaign is over.
+ */
+function showLevelSelect(): void {
+  const unlocked = countUnlocked(save, getSlugs())
+  const resume = resolveResume(save, getSlugs())
+  const results = new Map(save.completed.map((result) => [result.slug, result]))
+
+  const cards: LevelCard[] = levels.map((level, index) => {
+    const result = results.get(level.slug)
+    const locked = index >= unlocked
+    const status = result
+      ? `✓ ${result.moves} moves · ${formatDuration(result.timeMs)}`
+      : locked
+        ? 'locked'
+        : save.current?.slug === level.slug && save.current.lurd !== ''
+          ? 'in progress'
+          : 'next'
+
+    return { level, status, locked }
+  })
+
+  levelGrid = createLevelGrid(cards, {
+    onPick: playLevel,
+    onEscape: showTitle,
+    initial: Math.min(resume?.index ?? unlocked - 1, unlocked - 1),
+  })
+
+  setMenu(levelsGridSlot, levelGrid)
+  showScreen(levelsSection)
+  // Only now that the cards have their size.
+  levelGrid.repaint()
+  levelGrid.reveal()
+}
+
+/**
+ * A level picked by the player rather than reached by the campaign: the one
+ * in progress picks up where it was left, one already solved is a replay, and
+ * any other joins the campaign from its start.
+ */
+function playLevel(index: number): void {
+  const { slug } = levels[index]
+
+  if (save.current?.slug === slug) {
+    startLevel(index, save.current.lurd, save.current.timeMs)
+
+    return
+  }
+
+  const replay = save.completed.some((result) => result.slug === slug)
+  startLevel(index, '', 0, replay)
 }
 
 function confirmNewGame(): void {
@@ -241,7 +320,12 @@ function startCampaignAt(index: number): void {
  * A saved path that no longer replays — the level was re-exported since —
  * starts the level over, clock included, rather than guessing.
  */
-function startLevel(index: number, lurd = '', timeMs = 0): void {
+function startLevel(
+  index: number,
+  lurd = '',
+  timeMs = 0,
+  replay = false,
+): void {
   const level = levels[index]
   const restored = restoreHistory(level.levelState, lurd)
 
@@ -253,6 +337,7 @@ function startLevel(index: number, lurd = '', timeMs = 0): void {
     timeMs: restored ? timeMs : 0,
     runningSince: null,
     solved: false,
+    replay,
   }
 
   hideOverlay()
@@ -334,7 +419,8 @@ function completeLevel(): void {
     pushes: current.history.pushCount(),
     timeMs: Math.round(current.timeMs),
   }
-  // A level solved again in the dev build replaces its earlier result.
+  // A level solved again — replayed, or won again in the dev build — replaces
+  // its earlier result.
   const completed = [
     ...save.completed.filter((each) => each.slug !== result.slug),
     result,
@@ -343,9 +429,11 @@ function completeLevel(): void {
   const isLast = nextIndex >= levels.length
 
   save = {
-    current: isLast
-      ? null
-      : { slug: levels[nextIndex].slug, lurd: '', timeMs: 0 },
+    current: current.replay
+      ? save.current
+      : isLast
+        ? null
+        : { slug: levels[nextIndex].slug, lurd: '', timeMs: 0 },
     completed,
   }
   persist()
@@ -357,9 +445,11 @@ function completeLevel(): void {
     body: [createStats(result)],
     menu: createMenu(
       isLast
-        ? [{ label: 'See results', action: showFinished }]
+        ? current.replay
+          ? [{ label: 'Main menu', action: showTitle }]
+          : [{ label: 'See results', action: showFinished }]
         : [
-            { label: 'Next level', action: () => startLevel(nextIndex) },
+            { label: 'Next level', action: () => playLevel(nextIndex) },
             { label: 'Main menu', action: showTitle },
           ],
     ),
@@ -557,7 +647,13 @@ window.addEventListener('keydown', (event) => {
   runCommand(command)
 })
 
-window.addEventListener('resize', updateGame)
+window.addEventListener('resize', () => {
+  updateGame()
+
+  if (!levelsSection.hidden) {
+    levelGrid?.repaint()
+  }
+})
 
 document.addEventListener('visibilitychange', () => {
   syncClock()
