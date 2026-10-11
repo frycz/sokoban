@@ -188,6 +188,10 @@
         height: 140px;
         justify-content: flex-end;
       }
+      /* A lone item — a fresh game's New Game — sits in the middle instead. */
+      #title-menu .menu:has(> .menu-item:only-child) {
+        justify-content: center;
+      }
       .menu-item {
         font: inherit;
         font-size: 16px;
