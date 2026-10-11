@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "game": "vite --port 5173",
+    "dev": "vite --mode devtools --port 5175",
     "editor": "vite --port 5174 --open /editor.html",
     "build": "tsc --noEmit && vite build",
     "build:editor": "tsc --noEmit && vite build --mode editor",

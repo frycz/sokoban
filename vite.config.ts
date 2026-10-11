@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import { levelExportPlugin } from './tools/level-export-plugin'
+import { levelOrderPlugin } from './tools/level-order-plugin'
 import { liveColorsPlugin } from './tools/live-colors-plugin'
 
 /**
@@ -14,8 +15,9 @@ export default defineConfig(({ mode }) => {
     // The editor's Export to levels/ writes into the working tree, so it is the
     // dev server's job and the plugin is serve-only. Both dev servers get it:
     // the editor runs on the same config, just a different port and entry.
-    // The live link from the colour picker is serve-only for the same reason.
-    plugins: [levelExportPlugin(), liveColorsPlugin()],
+    // The live link from the colour picker is serve-only for the same reason,
+    // and so is the dev build's level reordering, which writes order.json.
+    plugins: [levelExportPlugin(), levelOrderPlugin(), liveColorsPlugin()],
     build: {
       outDir: isEditor ? 'dist-editor' : 'dist',
       rollupOptions: {

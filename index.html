@@ -7,6 +7,14 @@
     <style>
       :root {
         color-scheme: dark;
+        --ground: #11131a;
+        --panel: #1d2230;
+        --line: #2c3444;
+        --text: #c3c9d8;
+        --muted: #7d8699;
+        --bright: #e8edf7;
+        --accent: #63a8e0;
+        --gold: #d7b36a;
       }
       html,
       body {
@@ -18,8 +26,14 @@
         flex-direction: column;
         padding: 16px;
         box-sizing: border-box;
-        background: #11131a;
-        color: #c3c9d8;
+        background:
+          radial-gradient(
+            ellipse at 50% 30%,
+            rgba(99, 168, 224, 0.07),
+            transparent 60%
+          ),
+          var(--ground);
+        color: var(--text);
         font:
           14px/1.5 ui-monospace,
           SFMono-Regular,
@@ -27,81 +41,188 @@
           monospace;
       }
       /* Author-origin `display` beats the browser's `[hidden]` rule whatever
-         the specificity, so the inactive screen needs hiding explicitly. */
-      section[hidden] {
-        display: none;
+         the specificity, so an inactive screen needs hiding explicitly. */
+      [hidden] {
+        display: none !important;
       }
-      #levels {
+      .screen {
         flex: 1 1 auto;
         min-height: 0;
-        overflow-y: auto;
-        max-width: 1000px;
-        width: 100%;
-        margin: 0 auto;
-      }
-      h1 {
-        margin: 8px 0 4px;
-        font-size: 16px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: #e8edf7;
-      }
-      #levels p.hint {
-        margin: 0 0 16px;
-        color: #7d8699;
-      }
-      #level-list {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 12px;
-      }
-      button.level {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        font: inherit;
-        color: inherit;
-        text-align: left;
-        background: #1d2230;
-        border: 1px solid #2c3444;
-        border-radius: 6px;
-        padding: 8px;
-        cursor: pointer;
-      }
-      button.level:hover {
-        border-color: #63a8e0;
-      }
-      /* The miniature is the game's own renderer at card size, so the canvas
-         gets a fixed box to measure itself against rather than a fluid one. */
-      button.level canvas {
-        display: block;
-        width: 100%;
-        aspect-ratio: 4 / 3;
-        background: #0c0e14;
-        border-radius: 4px;
-      }
-      button.level .name {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      button.level .tiles {
-        color: #7d8699;
-        font-size: 12px;
-      }
-      #levels-report {
-        margin: 16px 0 0;
-        color: #d7b36a;
-        white-space: pre-line;
-      }
-      #game {
-        flex: 1 1 auto;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         gap: 16px;
-        min-height: 0;
+      }
+      .keys {
+        flex: 0 0 auto;
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        text-align: center;
+      }
+      kbd {
+        font: inherit;
+        color: var(--text);
+        padding: 0 4px;
+        border: 1px solid var(--line);
+        border-radius: 3px;
+      }
+
+      /* Title and finale share one card. */
+      .card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        max-width: 560px;
+        width: 100%;
+        text-align: center;
+      }
+      .game-title {
+        margin: 0;
+        font-size: clamp(40px, 9vw, 76px);
+        line-height: 1;
+        letter-spacing: 0.18em;
+        /* Letter spacing trails the last letter too; this keeps it centred. */
+        margin-right: -0.18em;
+        text-transform: uppercase;
+        color: var(--bright);
+        text-shadow:
+          0 0 24px rgba(99, 168, 224, 0.35),
+          0 3px 0 #2c3444;
+      }
+      .tagline,
+      .eyebrow {
+        margin: 0;
+        color: var(--muted);
+      }
+      .eyebrow {
+        color: var(--gold);
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        font-size: 12px;
+      }
+      .prompt {
+        margin: 8px 0 0;
+        color: var(--gold);
+      }
+
+      /* A crate pushed onto a goal — the whole game in three cells. */
+      .motif {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .motif span {
+        width: 28px;
+        height: 28px;
+        box-sizing: border-box;
+      }
+      .motif .player {
+        border-radius: 50%;
+        background: var(--accent);
+        transform: scale(0.75);
+      }
+      .motif .crate {
+        border: 3px solid var(--gold);
+        border-radius: 4px;
+        background:
+          linear-gradient(
+            45deg,
+            transparent 44%,
+            var(--gold) 44% 56%,
+            transparent 56%
+          ),
+          linear-gradient(
+            -45deg,
+            transparent 44%,
+            var(--gold) 44% 56%,
+            transparent 56%
+          ),
+          #3a3020;
+        animation: push 2.4s ease-in-out infinite;
+      }
+      .motif .goal {
+        border: 2px dashed var(--muted);
+        border-radius: 4px;
+      }
+      @keyframes push {
+        0%,
+        20% {
+          transform: translateX(0);
+        }
+        55%,
+        100% {
+          transform: translateX(6px);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .motif .crate {
+          animation: none;
+        }
+      }
+
+      .menu {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 240px;
+        margin-top: 20px;
+      }
+      .menu-item {
+        font: inherit;
+        font-size: 16px;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        padding: 8px 20px;
+        cursor: pointer;
+        transition:
+          color 0.12s,
+          background 0.12s,
+          border-color 0.12s;
+      }
+      .menu-item.selected {
+        color: var(--bright);
+        background: var(--panel);
+        border-color: var(--accent);
+      }
+      .menu-item.selected::before {
+        content: '▸ ';
+        color: var(--accent);
+      }
+
+      /* The board. */
+      #game {
+        position: relative;
+        justify-content: stretch;
+      }
+      #hud {
+        flex: 0 0 auto;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 4px 24px;
+        width: 100%;
+        max-width: 900px;
+      }
+      #hud-level {
+        color: var(--bright);
+      }
+      #hud-level .count {
+        color: var(--muted);
+      }
+      #hud-stats {
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      #hud-stats b {
+        font-weight: normal;
+        color: var(--text);
       }
       #board {
         flex: 1 1 auto;
@@ -109,39 +230,159 @@
         max-width: 900px;
         min-height: 0;
       }
-      #status {
+      #game-footer {
         flex: 0 0 auto;
-        margin: 0;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 8px 16px;
+      }
+      #overlay {
+        position: absolute;
+        inset: -16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(10, 12, 18, 0.72);
+        backdrop-filter: blur(2px);
+      }
+      .panel {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        min-width: 280px;
+        padding: 28px 32px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
         text-align: center;
       }
-      button#back {
-        flex: 0 0 auto;
-        font: inherit;
-        color: #7d8699;
-        background: #1d2230;
-        border: 1px solid #2c3444;
-        border-radius: 4px;
-        padding: 5px 10px;
-        cursor: pointer;
+      .panel h2 {
+        margin: 0;
+        font-size: 20px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--bright);
       }
-      button#back:hover {
-        color: inherit;
-        border-color: #4b5570;
+      .panel .menu {
+        margin-top: 12px;
+      }
+
+      .stats {
+        display: flex;
+        gap: 28px;
+        margin: 8px 0 0;
+      }
+      .stats div {
+        display: flex;
+        flex-direction: column;
+      }
+      .stats dt {
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .stats dd {
+        margin: 0;
+        font-size: 22px;
+        color: var(--bright);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* The finale. */
+      #finished .card {
+        max-width: 640px;
+      }
+      .results-wrap {
+        width: 100%;
+        max-height: 40vh;
+        overflow: auto;
+        margin-top: 8px;
+      }
+      .results {
+        width: 100%;
+        border-collapse: collapse;
+        font-variant-numeric: tabular-nums;
+      }
+      .results th,
+      .results td {
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: right;
+      }
+      .results th:nth-child(2),
+      .results td:nth-child(2) {
+        text-align: left;
+      }
+      .results thead th {
+        color: var(--muted);
+        font-weight: normal;
+        font-size: 12px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .results td:first-child {
+        color: var(--muted);
+      }
+      .results tfoot td {
+        color: var(--bright);
+        border-bottom: none;
       }
     </style>
   </head>
   <body>
-    <section id="levels">
-      <h1>Sokoban</h1>
-      <p class="hint">Pick a level.</p>
-      <div id="level-list"></div>
-      <p id="levels-report"></p>
+    <section id="title" class="screen">
+      <div class="card">
+        <div class="motif" aria-hidden="true">
+          <span class="player"></span><span class="crate"></span
+          ><span class="goal"></span>
+        </div>
+        <h1 class="game-title">Sokoban</h1>
+        <p class="tagline">Push every crate onto a goal.</p>
+        <p class="prompt" id="title-prompt" hidden></p>
+        <div id="title-menu"></div>
+      </div>
+      <p class="keys">
+        <kbd>↑</kbd> <kbd>↓</kbd> choose · <kbd>Enter</kbd> select
+      </p>
     </section>
 
-    <section id="game" hidden>
+    <section id="game" class="screen" hidden>
+      <header id="hud">
+        <span id="hud-level"></span>
+        <span id="hud-stats"></span>
+      </header>
       <canvas id="board"></canvas>
-      <p id="status"></p>
-      <button type="button" id="back">Levels (Esc)</button>
+      <footer id="game-footer">
+        <p class="keys">
+          <kbd>←↑↓→</kbd>/<kbd>WASD</kbd> move · <kbd>Z</kbd> undo ·
+          <kbd>R</kbd> restart · <kbd>Esc</kbd> menu
+        </p>
+      </footer>
+      <div id="overlay" hidden>
+        <div class="panel">
+          <p class="eyebrow" id="overlay-eyebrow"></p>
+          <h2 id="overlay-title"></h2>
+          <div id="overlay-body"></div>
+          <div id="overlay-menu"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="finished" class="screen" hidden>
+      <div class="card">
+        <p class="eyebrow">All levels complete</p>
+        <h1 class="game-title">Well done</h1>
+        <p class="tagline" id="finished-summary"></p>
+        <div class="results-wrap">
+          <table class="results" id="finished-results"></table>
+        </div>
+        <div id="finished-menu"></div>
+      </div>
     </section>
 
     <script type="module" src="/src/host/index.ts"></script>

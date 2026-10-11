@@ -5,11 +5,13 @@ The game logic is a pure state transition function; everything else is a thin sh
 ```
 index.html     the game
 editor.html    the level editor
-levels/        one directory per level — what the editor exports and the game plays
+levels/        one directory per level — what the editor exports and the game plays,
+               plus order.json, the campaign order
 
 src/core/       types.ts, level.ts, step.ts, rules.ts   pure, no DOM, no I/O
-src/host/       index.ts, history.ts, levels.ts,        picker, history stack,
-                level-data.ts                           keybindings, dispatch
+src/host/       index.ts, history.ts, levels.ts,        screens, history stack,
+                level-data.ts, level-order.ts,          keybindings, dispatch,
+                save.ts, menu.ts, dev-tools.ts          campaign and save
 src/render/     canvas.ts, colors.ts, tile-roles.ts,    (state) => draw
                 sheet.ts, skin.ts, layers.ts
 src/editor/     document.ts, xsb.ts, validate.ts,       level mode, same pure/shell/draw split
@@ -29,12 +31,13 @@ tools/          level-export-plugin.ts                  the dev-server endpoint 
 TypeScript, built with Vite. `npm run verify` checks everything (format, lint,
 knip, types, tests).
 
-| Command                | What it does                        |
-| ---------------------- | ----------------------------------- |
-| `npm run dev`          | the game, on :5173                  |
-| `npm run editor`       | the level editor, on :5174          |
-| `npm run build`        | ships the game to `dist/`           |
-| `npm run build:editor` | builds the editor to `dist-editor/` |
+| Command                | What it does                         |
+| ---------------------- | ------------------------------------ |
+| `npm run game`         | the game as players get it, on :5173 |
+| `npm run dev`          | the game plus dev tools, on :5175    |
+| `npm run editor`       | the level editor, on :5174           |
+| `npm run build`        | ships the game to `dist/`            |
+| `npm run build:editor` | builds the editor to `dist-editor/`  |
 
 The game is the product and the editor is an internal tool, so they do not share
 a build: `npm run build` takes `index.html` as its only entry, and no editor code
@@ -127,33 +130,77 @@ Split along the DOM line:
 
 - `history.ts` — `createHistory(initial)` owns a `LevelState[]` stack, the only mutable value in the program. Calls `step`, pushes the result, undoes by popping and resets by truncating to the first entry. `run(command)` returns whether anything changed. No DOM, so it is unit-testable.
 - `levels.ts` — finds everything in `levels/`, parses it, loads each atlas, and hands back a list of playable levels plus the problems it hit. Async, and the only I/O the game does.
-- `index.ts` — two screens, element lookup, keybindings, and the status line. Re-renders when `run` reports a change.
+- `history.ts` also keeps the path as LURD — uppercase for a push, so the push count is read off it — and `restoreHistory(initial, lurd)` replays a saved path back into a full history, undo stack included, or returns null when the level refuses it.
+- `level-order.ts` — `levels/order.json` read and applied. Pure.
+- `save.ts` — the save format, where Continue resumes, and the guarded `localStorage` access. Pure apart from the two storage calls.
+- `menu.ts` — the menu every screen uses: arrows or W/S and Enter, or the mouse, one highlight for both.
+- `index.ts` — the screens, the clock, saving, keybindings and the HUD. Re-renders when `run` reports a change.
+- `dev-tools.ts` — the dev build's extras, loaded only by `npm run dev`.
 
 No game rules live in any of them.
 
-### The game is a picker and a board
+### The game is a campaign
 
-`index.ts` holds one `activeGame` — the level, its history and its renderer — and
-it is null while the picker is up. That null is also the keybinding guard: the
-arrow keys belong to a board, and until a level is picked there is no board for
-them to move anything on. Escape and the Levels button put it back to null.
+Title, board, finale. The title offers **Continue** when the save has a level
+in progress and **New Game** always — behind a confirmation when there is
+progress to lose. A new game plays the levels in `levels/order.json` order, one
+after another; solving one shows a level-complete panel over the board with its
+moves, pushes and time, and solving the last one leads to the finale, which
+lists every level's result and the totals. Escape on the board pauses: Resume,
+Restart level, Main menu.
+
+`index.ts` holds one `play` — the level, its history, its renderer and its
+clock — and it is null while no board is up. One `activeMenu` takes the keys
+whenever a menu is on screen, title, pause or panel alike, so the arrows drive
+exactly one thing at a time.
 
 The renderer is built per level rather than once for the canvas, because the
 skin belongs to the level: `createRenderer(canvas, level.skin, level.layers)`
 draws that bundle's tiles, and `createRenderer(canvas, null)` draws the
 procedural palette for a level that shipped without any.
 
-A card's miniature is that same renderer pointed at a small canvas, so a
-miniature is not an approximation of the level — it is the game's own view of it,
-tiles and all, at card size. The cost is that a canvas has to be measured while
-it is on screen, which is why the miniatures repaint on a resize and on coming
-back from a level rather than once at startup.
+#### The save
+
+One `localStorage` key holds the level in progress — its slug, its path as
+LURD, and its time — and every solved level's result. It is written on every
+move, on pause, when the tab is hidden, and once a second while the clock
+runs, so a reload's Continue lands on the same level, in the same position,
+with the same undo stack, counts and clock. Solving a level moves the save on
+to the next one at once, so a reload from the level-complete panel does not
+replay the level just solved.
+
+Levels are named by slug rather than by place, so reordering the campaign never
+moves a player onto a level they did not play. A saved slug that has gone
+resumes at the first unsolved level; a saved path the level no longer accepts —
+it was re-exported — starts that level over rather than guessing.
+
+The clock runs only while the board is on screen, nothing covers it, the tab is
+visible and the level is unsolved.
+
+#### The dev build
+
+`npm run dev` is `vite --mode devtools`. `index.ts` imports `dev-tools.ts` behind
+`import.meta.env.MODE === 'devtools'`, which a production build folds to false,
+so no dev code or style reaches `dist/`. It adds:
+
+- **Levels (dev)** on the title: every level as a card — a miniature drawn by
+  the game's own renderer, its slug and its tiles — in campaign order. Drag a
+  card, or use ↑ ↓, to reorder; each change is posted to `/api/level-order`,
+  which `tools/level-order-plugin.ts` writes to `levels/order.json`. The
+  plugin swallows the HMR update for its own write, so the page that saved the
+  order is not reloaded under the author. **Play from here** starts a fresh
+  run at that level.
+- **Win level**, a button under the board and the N key: the level counts as
+  solved with its current moves and time.
+
+The dev build saves under its own key, on its own port, so it never touches a
+player's save.
 
 Undo is deliberately outside engine state. Because `step` is pure, keeping a stack of previous states gives undo, redo, and replay for free, and the engine stays simple.
 
 Illegal moves are detected by identity: `step` returns the same object when nothing changed, so `next === current()` means the move was rejected and no history entry is recorded. That identity contract is load-bearing, and `step.test.ts` asserts it with `toBe` rather than `toEqual`.
 
-Keys: arrows or WASD to move, Z or U to undo, R to reset, Escape for the level list.
+Keys: arrows or WASD to move, Z or U to undo, R to reset, Escape to pause. In menus, arrows or W/S to choose and Enter or Space to pick.
 
 ## `render/` — dumb
 
@@ -391,8 +438,14 @@ The cost is that an export is not visible to a game page already open: the glob
 is baked into the module, so a newly written level arrives on the next load. The
 editor says so when it reports a successful export.
 
-The built-in level from `level-data.ts` is listed alongside them, so a fresh
-checkout with nothing exported yet still has something to play.
+The order comes from `levels/order.json`, a list of slugs, read by a sixth
+glob so a checkout without one still builds. A level it does not name — one
+just exported — plays after the listed ones, so a new level is never invisible;
+a slug with no level is skipped and reported.
+
+The built-in level from `level-data.ts` is a fallback only: it is played when
+`levels/` has nothing loadable, so a fresh checkout still has something to
+play, and never appears beside exported levels.
 
 ## `editor/` — draws levels, speaks XSB
 
@@ -764,7 +817,9 @@ The editor's pure modules are tested the same way, with XSB as the language in b
 
 `skin/layers.test.ts` covers the other half of that seam the only way worth doing it: `formatLayersFile` out, `parseLayerStack` — the game's own reader — back in, asserted against the packing. A column that survives the file is the whole promise, and asserting either side against a literal would not make it.
 
-`host/levels.ts` and `editor/publish.ts` are untested, and so is the export endpoint. They are I/O, and the one thing worth asserting about them — that only a level the game can load is ever written — is asserted by `parseStringToLevelState`, which the endpoint calls and `core/level.test.ts` already covers from both directions.
+`host/save.test.ts` and `host/level-order.test.ts` cover the rules for a save or an order that has drifted from the levels: a save follows its level through a reorder, falls back to the first unsolved level when its level has gone, and an order file's unknown slugs are skipped and its unlisted levels appended.
+
+`host/levels.ts` and `editor/publish.ts` are untested, and so are the export and order endpoints. They are I/O, and the one thing worth asserting about them — that only a level the game can load is ever written — is asserted by `parseStringToLevelState`, which the endpoint calls and `core/level.test.ts` already covers from both directions.
 
 ## Naming
 
@@ -776,5 +831,4 @@ The only short names left are `x` and `y` for grid coordinates, where the single
 
 - `step` returns only the new state, not `{ state, events }`. Animation and sound will need either a diff of consecutive states or an event channel; that choice is postponed until one of them is actually built.
 - Level sets. `levels/` holds one level per directory, which is what the editor produces; a downloaded `.sok` collection is many levels in one file. Reading those needs a pure `parseCollection(text)` in `core/level.ts` to split the file and strip its `Title:` / `Author:` metadata, and a second shape in the catalog for "a directory of levels that share a skin". `parseStringToLevelState()` itself would not change. Not built, because nothing in the repository is a collection yet.
-- Progress. Nothing records which levels have been solved, so the picker shows no state. It is one key in `localStorage` keyed by slug, once there is a reason to want it.
 - Redo is not wired up. The history stack already supports it; it needs a forward stack and a key.

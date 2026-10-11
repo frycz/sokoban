@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { parseStringToLevelState } from '../core/level'
 import { toXsb, xsb } from '../core/test-helpers'
 import type { LevelState } from '../core/types'
-import { createHistory } from './history'
+import { createHistory, restoreHistory } from './history'
 
 const LEVEL = xsb('#######', '#@ $ .#', '#######')
 
@@ -104,5 +104,61 @@ describe('createHistory', () => {
     history.run({ type: 'reset' })
 
     expect(toXsb(initial)).toBe(LEVEL)
+  })
+
+  it('records the path as LURD, uppercase for a push', () => {
+    const history = createHistory(initial)
+    history.run(move('right'))
+    history.run(move('right'))
+    history.run(move('left'))
+
+    expect(history.lurd()).toBe('rRl')
+    expect(history.pushCount()).toBe(1)
+  })
+
+  it('drops undone moves from the path', () => {
+    const history = createHistory(initial)
+    history.run(move('right'))
+    history.run(move('right'))
+    history.run({ type: 'undo' })
+
+    expect(history.lurd()).toBe('r')
+    expect(history.pushCount()).toBe(0)
+
+    history.run({ type: 'reset' })
+
+    expect(history.lurd()).toBe('')
+  })
+})
+
+describe('restoreHistory', () => {
+  let initial: LevelState
+
+  beforeEach(() => {
+    initial = parseStringToLevelState(LEVEL)
+  })
+
+  it('replays a saved path, undo stack and all', () => {
+    const history = restoreHistory(initial, 'rR')
+
+    expect(history?.moveCount()).toBe(2)
+    expect(history?.pushCount()).toBe(1)
+    expect(toXsb(history!.current())).toBe(xsb('#######', '#  @$.#', '#######'))
+
+    history?.run({ type: 'undo' })
+
+    expect(toXsb(history!.current())).toBe(xsb('#######', '# @$ .#', '#######'))
+  })
+
+  it('restores an empty path to the start', () => {
+    expect(restoreHistory(initial, '')?.current()).toBe(initial)
+  })
+
+  it('refuses a path the level rejects', () => {
+    expect(restoreHistory(initial, 'l')).toBeNull()
+  })
+
+  it('refuses a character that is not a move', () => {
+    expect(restoreHistory(initial, 'rx')).toBeNull()
   })
 })

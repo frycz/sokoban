@@ -8,9 +8,12 @@ import {
 } from '../render/layers'
 import { createSkin, parseSkinManifest, type Skin } from '../render/skin'
 import { LEVEL } from './level-data'
+import { applyLevelOrder, parseLevelOrder } from './level-order'
 
 /** A level the picker can offer: parsed, so it is known to be playable. */
 export type PlayableLevel = {
+  /** The directory name — what `order.json` and a save refer to a level by. */
+  readonly slug: string
   readonly name: string
   readonly levelState: LevelState
   /** Null for a level that shipped without tiles; it plays in flat colour. */
@@ -65,10 +68,19 @@ const layerRecords = import.meta.glob<unknown>('/levels/*/tiles.json', {
   eager: true,
 })
 
+/** A glob of one file, so a checkout without `order.json` still builds. */
+const orderRecords = import.meta.glob<unknown>('/levels/order.json', {
+  import: 'default',
+  eager: true,
+})
+
+const BUILT_IN_SLUG = 'built-in'
+
 /**
- * Everything in `levels/`, plus the built-in level so the picker is never empty
- * — a fresh checkout has nothing exported yet, and the game should still be
- * playable.
+ * Everything in `levels/`, in the order `levels/order.json` gives — or the
+ * built-in level alone when there is nothing there, so a fresh checkout still
+ * has something to play. The built-in level is a fallback rather than part of
+ * the campaign: it never appears beside exported ones.
  *
  * Async only because the atlases are images. A level whose text the parser
  * refuses is left out and reported: the export endpoint will not write one, so
@@ -79,19 +91,6 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
   const problems: string[] = []
   const levels: PlayableLevel[] = []
 
-  const builtIn = readLevel('Built-in', LEVEL)
-
-  if (builtIn.kind === 'level') {
-    levels.push({
-      ...builtIn.level,
-      skin: null,
-      layers: DEFAULT_LAYER_STACK,
-      groundColor: null,
-    })
-  } else {
-    problems.push(builtIn.message)
-  }
-
   const slugs = Object.keys(levelTexts)
     .map(getSlug)
     .sort((one, other) => one.localeCompare(other))
@@ -99,6 +98,7 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
   for (const slug of slugs) {
     const record = readLevelRecord(slug)
     const read = readLevel(
+      slug,
       readName(record, slug),
       levelTexts[`/levels/${slug}/level.xsb`],
     )
@@ -132,7 +132,38 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
     })
   }
 
-  return { levels, problems }
+  if (levels.length === 0) {
+    const builtIn = readLevel(BUILT_IN_SLUG, 'Built-in', LEVEL)
+
+    if (builtIn.kind === 'level') {
+      levels.push({
+        ...builtIn.level,
+        skin: null,
+        layers: DEFAULT_LAYER_STACK,
+        groundColor: null,
+      })
+    } else {
+      problems.push(builtIn.message)
+    }
+
+    return { levels, problems }
+  }
+
+  const orderRecord = orderRecords['/levels/order.json']
+  const order = orderRecord === undefined ? [] : parseLevelOrder(orderRecord)
+
+  if (!order) {
+    problems.push(
+      'order.json: is not a list of level slugs, so the levels play in directory order.',
+    )
+  }
+
+  const ordered = applyLevelOrder(levels, order ?? [])
+
+  return {
+    levels: ordered.levels,
+    problems: [...problems, ...ordered.problems],
+  }
 }
 
 type LayerResult =
@@ -179,11 +210,11 @@ type LevelResult =
     }
   | { readonly kind: 'problem'; readonly message: string }
 
-function readLevel(name: string, xsb: string): LevelResult {
+function readLevel(slug: string, name: string, xsb: string): LevelResult {
   try {
     return {
       kind: 'level',
-      level: { name, levelState: parseStringToLevelState(xsb) },
+      level: { slug, name, levelState: parseStringToLevelState(xsb) },
     }
   } catch (error) {
     return {
