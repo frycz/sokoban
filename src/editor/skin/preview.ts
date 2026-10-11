@@ -157,6 +157,13 @@ export function createSkinPreviewPainter(
         return
       }
 
+      // A floor with no tile is the ground showing through, when there is one:
+      // the flat floor colour would paint over the very thing it sits on. The
+      // game makes the same call, so the two agree.
+      if (role === 'floor' && editorDocument.groundColor !== null) {
+        return
+      }
+
       context.fillStyle = getRoleColor(role)
       context.fillRect(x, y, tileSize, tileSize)
     }

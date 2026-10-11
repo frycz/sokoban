@@ -59,12 +59,12 @@ export function createRenderer(
 
     if (skin) {
       context.imageSmoothingEnabled = !skin.isPixelated
-      drawSkinnedBoard(context, levelState, layout, skin, layers)
+      drawSkinnedBoard(context, levelState, layout, skin, layers, groundColor)
 
       return
     }
 
-    drawProceduralBoard(context, levelState, layout)
+    drawProceduralBoard(context, levelState, layout, groundColor)
   }
 }
 
@@ -144,6 +144,7 @@ function drawSkinnedBoard(
   layout: BoardLayout,
   skin: Skin,
   layers: LayerStack,
+  groundColor: string | null,
 ): void {
   const { level, playerCurrentPosition, boxPositions } = levelState
 
@@ -153,7 +154,12 @@ function drawSkinnedBoard(
 
     if (!rect) {
       // A manifest missing a role it was supposed to carry. Flat colour keeps
-      // the board readable instead of leaving a hole in it.
+      // the board readable instead of leaving a hole in it — except a floor
+      // over a ground, where the ground is what should show.
+      if (role === 'floor' && groundColor !== null) {
+        return
+      }
+
       context.fillStyle = getRoleColor(role)
       context.fillRect(x, y, layout.tile, layout.tile)
 
@@ -255,6 +261,7 @@ function drawProceduralBoard(
   context: CanvasRenderingContext2D,
   levelState: LevelState,
   layout: BoardLayout,
+  groundColor: string | null,
 ): void {
   const { level, playerCurrentPosition, boxPositions } = levelState
   const { tile } = layout
@@ -267,8 +274,11 @@ function drawProceduralBoard(
       continue
     }
 
-    context.fillStyle = COLORS.floor
-    context.fillRect(x, y, tile, tile)
+    // With a ground there is no floor tile to draw: the ground is the floor.
+    if (groundColor === null) {
+      context.fillStyle = COLORS.floor
+      context.fillRect(x, y, tile, tile)
+    }
 
     if (isWall) {
       context.fillStyle = COLORS.wall
