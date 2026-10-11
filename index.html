@@ -111,6 +111,15 @@
         color: var(--gold);
       }
 
+      /* Every change of view — a screen, a level, the overlay — crossfades
+         from the old one; see transitionView in src/host/index.ts. */
+      ::view-transition-group(root),
+      ::view-transition-old(root),
+      ::view-transition-new(root) {
+        animation-duration: 0.1s;
+        animation-timing-function: ease-out;
+      }
+
       /* A crate pushed onto a goal — the whole game in three cells. */
       .motif {
         display: flex;

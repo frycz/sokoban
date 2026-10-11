@@ -119,6 +119,65 @@ let play: Play | null = null
  */
 let activeMenu: Menu | null = null
 
+// --- View transitions -------------------------------------------------------
+
+/** True while a view change runs inside a transition's update. */
+let inViewUpdate = false
+
+/**
+ * True from asking for a transition until its update runs — a frame, while
+ * the browser snapshots the old view. Keys are ignored meanwhile, so a second
+ * Enter cannot act on the menu that is about to go.
+ */
+let viewUpdatePending = false
+
+/**
+ * Runs a change to what is on screen as a crossfade from the old view — the
+ * timing is in the stylesheet. Directly when the browser has no view
+ * transitions, the player prefers reduced motion, or a transition is already
+ * running this update, so a change made inside another is part of it.
+ *
+ * The update must be the whole change, not just its first step: it runs a
+ * frame later, and anything after this call would see the old view.
+ */
+function transitionView(update: () => void): void {
+  if (
+    inViewUpdate ||
+    !('startViewTransition' in document) ||
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  ) {
+    update()
+
+    return
+  }
+
+  viewUpdatePending = true
+  document.startViewTransition(() => {
+    viewUpdatePending = false
+    inViewUpdate = true
+
+    try {
+      update()
+    } finally {
+      inViewUpdate = false
+    }
+  })
+}
+
+/**
+ * For a function that changes the view: hands it over to a transition and
+ * says so, or says it should go ahead now — it is already inside one.
+ */
+function deferToTransition(change: () => void): boolean {
+  if (inViewUpdate) {
+    return false
+  }
+
+  transitionView(change)
+
+  return true
+}
+
 function showScreen(screen: HTMLElement): void {
   for (const each of screens) {
     each.hidden = each !== screen
@@ -193,6 +252,10 @@ function persistProgress(): void {
 // --- The title screen -------------------------------------------------------
 
 function showTitle(): void {
+  if (deferToTransition(showTitle)) {
+    return
+  }
+
   persistProgress()
   play = null
   hideOverlay()
@@ -237,6 +300,10 @@ let levelGrid: LevelGrid | null = null
  * the campaign is over.
  */
 function showLevelSelect(): void {
+  if (deferToTransition(showLevelSelect)) {
+    return
+  }
+
   const unlocked = countUnlocked(save, getSlugs())
   const resume = resolveResume(save, getSlugs())
   const results = new Map(save.completed.map((result) => [result.slug, result]))
@@ -287,6 +354,10 @@ function playLevel(index: number): void {
 }
 
 function confirmNewGame(): void {
+  if (deferToTransition(confirmNewGame)) {
+    return
+  }
+
   titlePrompt.style.visibility = 'visible'
   setMenu(
     titleMenuSlot,
@@ -326,6 +397,10 @@ function startLevel(
   timeMs = 0,
   replay = false,
 ): void {
+  if (deferToTransition(() => startLevel(index, lurd, timeMs, replay))) {
+    return
+  }
+
   const level = levels[index]
   const restored = restoreHistory(level.levelState, lurd)
 
@@ -479,17 +554,19 @@ function createStats(result: LevelResult): HTMLElement {
 
 // --- The overlay: level complete and restart --------------------------------
 
-function showOverlay({
-  eyebrow,
-  title,
-  body,
-  menu,
-}: {
+type OverlayContent = {
   readonly eyebrow: string
   readonly title: string
   readonly body: readonly Node[]
   readonly menu: Menu
-}): void {
+}
+
+function showOverlay(content: OverlayContent): void {
+  if (deferToTransition(() => showOverlay(content))) {
+    return
+  }
+
+  const { eyebrow, title, body, menu } = content
   overlayEyebrow.textContent = eyebrow
   overlayEyebrow.hidden = eyebrow === ''
   overlayTitle.textContent = title
@@ -500,6 +577,10 @@ function showOverlay({
 }
 
 function hideOverlay(): void {
+  if (deferToTransition(hideOverlay)) {
+    return
+  }
+
   overlay.hidden = true
   overlayMenuSlot.replaceChildren()
   activeMenu = null
@@ -525,10 +606,11 @@ function confirmRestart(): void {
         { label: 'Cancel', action: hideOverlay },
         {
           label: 'Yes',
-          action: () => {
-            hideOverlay()
-            runCommand({ type: 'reset' })
-          },
+          action: () =>
+            transitionView(() => {
+              hideOverlay()
+              runCommand({ type: 'reset' })
+            }),
         },
       ],
       { onEscape: hideOverlay, initial: 1 },
@@ -539,6 +621,10 @@ function confirmRestart(): void {
 // --- The finale -------------------------------------------------------------
 
 function showFinished(): void {
+  if (deferToTransition(showFinished)) {
+    return
+  }
+
   play = null
   hideOverlay()
 
@@ -601,7 +687,7 @@ function sum(values: readonly number[]): number {
 // --- Input and lifecycle ----------------------------------------------------
 
 window.addEventListener('keydown', (event) => {
-  if (event.metaKey || event.ctrlKey || event.altKey) {
+  if (event.metaKey || event.ctrlKey || event.altKey || viewUpdatePending) {
     return
   }
 
@@ -708,9 +794,11 @@ async function start(): Promise<void> {
     }
   }
 
-  showTitle()
-  // Only this first time: the menu fades in where the loader was.
-  titleMenuSlot.querySelector('.menu')?.classList.add('entering')
+  transitionView(() => {
+    showTitle()
+    // Only this first time: the menu's items rise in where the loader was.
+    titleMenuSlot.querySelector('.menu')?.classList.add('entering')
+  })
 }
 
 void start()
