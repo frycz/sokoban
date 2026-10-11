@@ -145,20 +145,25 @@
             transparent 56%
           ),
           #3a3020;
-        animation: push 2.4s ease-in-out infinite;
+        animation: push 2.8s ease-in-out infinite;
       }
       .motif .goal {
         border: 2px dashed var(--muted);
         border-radius: 4px;
       }
+      /* Pushed, a rest, then eased back — a loop with no snap. */
       @keyframes push {
         0%,
-        20% {
+        15% {
           transform: translateX(0);
         }
-        55%,
-        100% {
+        45%,
+        65% {
           transform: translateX(6px);
+        }
+        90%,
+        100% {
+          transform: translateX(0);
         }
       }
       @media (prefers-reduced-motion: reduce) {
