@@ -1,5 +1,7 @@
 # Sokoban
 
+[Demo](https://frycz.github.io/sokoban/)
+
 ![Main screen](assets/main-screen.png)
 
 ![Level](assets/level.png)

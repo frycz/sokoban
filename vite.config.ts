@@ -14,6 +14,9 @@ export default defineConfig(({ mode }) => {
   const isEditor = mode === 'editor'
 
   return {
+    // Relative asset URLs, so the build runs from any subpath — GitHub Pages
+    // serves a project site under /<repo>/, not at the domain root.
+    base: './',
     // The editor's Export to levels/ writes into the working tree, so it is the
     // dev server's job and the plugin is serve-only. Both dev servers get it:
     // the editor runs on the same config, just a different port and entry.
