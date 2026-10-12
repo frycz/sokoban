@@ -30,6 +30,7 @@ export type SavePanel = {
 export function createSavePanel(options: SavePanelOptions): SavePanel {
   const { store } = options
   const select = requireElement<HTMLSelectElement>('#save-list')
+  const saveTime = requireElement<HTMLElement>('#save-time')
   const saveButton = requireElement<HTMLButtonElement>('#save')
   const saveNewButton = requireElement<HTMLButtonElement>('#save-new')
   const openButton = requireElement<HTMLButtonElement>('#save-open')
@@ -66,7 +67,20 @@ export function createSavePanel(options: SavePanelOptions): SavePanel {
     }
 
     select.value = selectedId !== null && findSave(selectedId) ? selectedId : ''
+    renderSaveTime()
     syncButtons()
+  }
+
+  /**
+   * The save the work belongs to, not the one picked in the list — the picked
+   * one already shows its time in its option.
+   */
+  function renderSaveTime(): void {
+    const current = currentId !== null ? findSave(currentId) : undefined
+
+    saveTime.textContent = current
+      ? `last saved ${formatTime(current.savedAt)}`
+      : 'not saved yet'
   }
 
   function syncButtons(): void {
