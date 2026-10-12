@@ -450,6 +450,7 @@ function paintMotif(): void {
   const isSkinned = skin !== null && tiles.every(({ rect }) => rect)
 
   titleMotif.classList.toggle('skinned', isSkinned)
+  titleMotif.classList.add('ready')
 
   for (const { cell, rect } of tiles) {
     if (!isSkinned || !skin || !rect) {

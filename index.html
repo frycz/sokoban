@@ -133,6 +133,15 @@
         height: 28px;
         box-sizing: border-box;
       }
+      /* Hidden until the levels load and paintMotif knows whether to draw
+         the default skin or these shapes, so neither flashes in for the
+         other; then faded in. */
+      .motif:not(.ready) {
+        opacity: 0;
+      }
+      .motif.ready {
+        transition: opacity 0.2s ease-out;
+      }
       .motif .player {
         border-radius: 50%;
         background: var(--accent);
