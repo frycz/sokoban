@@ -361,7 +361,14 @@
         gap: 4px;
         min-width: 0;
       }
+      /* Undoes the level legend's 9px .swatch dot, which this button shares
+         a class name with and would otherwise be squashed to. */
       .swatch-row > button.swatch {
+        width: auto;
+        height: auto;
+        margin: 0;
+        padding: 5px 8px;
+        border-radius: 4px;
         display: flex;
         align-items: center;
         gap: 8px;
