@@ -33,6 +33,15 @@ type Point = { readonly x: number; readonly y: number }
 /** Where each movable piece is drawn this frame, by its cell in the state. */
 type PiecePoint = (position: number) => Point
 
+/**
+ * The largest a cell is ever drawn, in CSS pixels. Without a cap the board
+ * always fills the canvas, so a small level got huge tiles and a big one small
+ * tiles; with it every level that fits plays at the same scale, and only a
+ * board too big for the screen shrinks. 48 is a whole multiple of a 16px skin,
+ * so pixel art stays square at full size.
+ */
+const MAX_TILE_PX = 48
+
 type BoardLayout = {
   readonly tile: number
   readonly originX: number
@@ -179,7 +188,7 @@ function prepareCanvas(
   context.clearRect(0, 0, cssWidth, cssHeight)
 
   const tile = Math.floor(
-    Math.min(cssWidth / level.width, cssHeight / level.height),
+    Math.min(MAX_TILE_PX, cssWidth / level.width, cssHeight / level.height),
   )
 
   const layout = {
