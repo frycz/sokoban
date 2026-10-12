@@ -277,25 +277,6 @@
         background: var(--panel);
         border-color: var(--accent);
       }
-      /* The arrow is on every item, hidden until selected, so selecting one
-         never moves its label; the invisible twin on the right balances it,
-         keeping the label centred. */
-      .menu-item::before,
-      .menu-item::after {
-        content: '▸ ';
-        color: var(--accent);
-        opacity: 0;
-      }
-      .menu-item::after {
-        content: ' ▸';
-        visibility: hidden;
-      }
-      .menu-item::before {
-        transition: opacity 0.2s ease-out;
-      }
-      .menu-item.selected::before {
-        opacity: 1;
-      }
 
       /* Level select: a card per level, its board in miniature. */
       #levels {

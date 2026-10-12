@@ -1,7 +1,8 @@
 import { isSolved } from '../core/rules'
 import type { LevelState } from '../core/types'
 import { createRenderer, type Motion } from '../render/canvas'
-import { getSkinTileRect } from '../render/skin'
+import type { SheetRect } from '../render/sheet'
+import { getSkinTileRect, type Skin } from '../render/skin'
 import type { TileRole } from '../render/tile-roles'
 import {
   createHistory,
@@ -429,6 +430,35 @@ function startCampaignAt(index: number): void {
 /** How big the motif's cells are when drawn in CSS alone. */
 const MOTIF_CELL_PX = 28
 
+/** The skin levels without their own are drawn with, or null for none. */
+function getDefaultSkin(): Skin | null {
+  return (
+    allLevels.find((level) => level.slug === defaultSkinSlug)?.ownSkin ?? null
+  )
+}
+
+/** One tile cut out of the atlas onto a canvas of its own, at its own size. */
+function drawTile(skin: Skin, rect: SheetRect): HTMLCanvasElement {
+  const tile = document.createElement('canvas')
+  tile.width = rect.width
+  tile.height = rect.height
+  tile
+    .getContext('2d')
+    ?.drawImage(
+      skin.image,
+      rect.x,
+      rect.y,
+      rect.width,
+      rect.height,
+      0,
+      0,
+      rect.width,
+      rect.height,
+    )
+
+  return tile
+}
+
 /**
  * The title's player, crate and goal, drawn with the default skin's tiles so
  * the first screen looks like the game that follows — or left to the CSS
@@ -436,8 +466,7 @@ const MOTIF_CELL_PX = 28
  * number, so its pixels stay square.
  */
 function paintMotif(): void {
-  const skin =
-    allLevels.find((level) => level.slug === defaultSkinSlug)?.ownSkin ?? null
+  const skin = getDefaultSkin()
   const cells: [string, TileRole][] = [
     ['.player', 'player'],
     ['.crate', 'box'],
@@ -458,28 +487,13 @@ function paintMotif(): void {
       continue
     }
 
-    const tile = document.createElement('canvas')
+    const tile = drawTile(skin, rect)
     const scale = skin.isPixelated
       ? Math.max(1, Math.round(MOTIF_CELL_PX / rect.height))
       : MOTIF_CELL_PX / rect.height
-    tile.width = rect.width
-    tile.height = rect.height
     tile.style.width = `${rect.width * scale}px`
     tile.style.height = `${rect.height * scale}px`
     tile.style.imageRendering = skin.isPixelated ? 'pixelated' : 'auto'
-    tile
-      .getContext('2d')
-      ?.drawImage(
-        skin.image,
-        rect.x,
-        rect.y,
-        rect.width,
-        rect.height,
-        0,
-        0,
-        rect.width,
-        rect.height,
-      )
     cell.replaceChildren(tile)
   }
 }
