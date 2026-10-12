@@ -192,6 +192,22 @@
       #publish-report:empty {
         display: none;
       }
+      /* A moment of green after a save lands, fading back on its own; the
+         transition is on the resting state so only the fade-out animates. */
+      .saves button,
+      .saves select {
+        transition:
+          background-color 0.6s,
+          border-color 0.6s,
+          color 0.6s;
+      }
+      .saves .just-saved,
+      .saves button.just-saved:hover:not(:disabled) {
+        background: #1f3a2a;
+        border-color: #6cc58a;
+        color: #bff0cc;
+        transition: none;
+      }
       /* Pushed away from the mode switch: it resets both panels, so it should
          not sit where a mode button is expected. */
       button.danger {

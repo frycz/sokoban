@@ -101,6 +101,26 @@ export function createSavePanel(options: SavePanelOptions): SavePanel {
     setCurrent(id)
     await refresh(id)
     options.showMessage(`Saved “${name}” at ${formatTime(save.savedAt)}.`, 'ok')
+    flashSaved()
+  }
+
+  let flashTimer: ReturnType<typeof setTimeout> | undefined
+
+  /**
+   * The report line alone is easy to miss at the far side of the top bar, so
+   * the controls that were just used say it too: Save and the list light up
+   * for a moment, then fade back. Saving again restarts it.
+   */
+  function flashSaved(): void {
+    clearTimeout(flashTimer)
+    saveButton.textContent = 'Saved ✓'
+    saveButton.classList.add('just-saved')
+    select.classList.add('just-saved')
+    flashTimer = setTimeout(() => {
+      saveButton.textContent = 'Save'
+      saveButton.classList.remove('just-saved')
+      select.classList.remove('just-saved')
+    }, 1500)
   }
 
   async function saveAsNew(): Promise<void> {
