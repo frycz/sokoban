@@ -437,8 +437,7 @@
         color: #7d8699;
         font-size: 12px;
       }
-      /* Deleting a palette cannot be undone — the stack is the document's — so
-         the control reads as the destructive one it is. */
+      /* Deleting a palette is the destructive control, so it reads as one. */
       #colors-mode .clear {
         flex: 0 0 auto;
         padding: 5px 8px;
@@ -626,6 +625,9 @@
           Delete
         </button>
       </span>
+      <button type="button" id="undo" title="Undo the last edit, in any panel">
+        Undo (U/Z)
+      </button>
       <button type="button" id="clear-storage" class="danger">
         Clear storage
       </button>
@@ -660,7 +662,6 @@
           <label for="height">h</label>
           <input id="height" type="number" />
           <button type="button" id="new">New</button>
-          <button type="button" id="undo">Undo (Z)</button>
           <span class="zoom">
             <span>zoom</span>
             <button type="button" id="grid-zoom-out" title="Zoom out">−</button>
@@ -946,7 +947,7 @@
             type="button"
             class="clear"
             id="palette-delete"
-            title="Delete this palette — palettes are not on the undo stack"
+            title="Delete this palette"
           >
             ×
           </button>

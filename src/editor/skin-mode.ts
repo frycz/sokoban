@@ -28,7 +28,7 @@ import {
 import { readSwatchClick, renderSwatches, type SwatchAction } from './swatches'
 import { computeGridLayout, getPositionAtPixel } from './layout'
 import type { SkinExport } from './publish'
-import type { Session } from './session'
+import type { Session, UndoSlice } from './session'
 import { readStoredText, writeStoredText } from './storage'
 import { createZoomControl } from './zoom'
 import {
@@ -177,6 +177,8 @@ export type SkinMode = EditorMode & {
   ) => Promise<void>
   /** The skin as it stands, for a save to keep — the same two values autosave stores. */
   readonly getStoredSkin: () => StoredSkin
+  /** The skin on the undo stack: the draft and the sheet it indexes. */
+  readonly undoSlice: UndoSlice<StoredSkin>
 }
 
 /**
@@ -1043,6 +1045,7 @@ export function createSkinMode(
     renderReport()
     renderCustomTileReport()
     renderLayerList()
+    session.record()
 
     if (storageNote !== null) {
       setMessage(storageNote, 'warning')
@@ -1188,21 +1191,11 @@ export function createSkinMode(
     syncSheetInputs()
   }
 
-  /**
-   * Z for undo, as in level mode, because it is the same stack: placing custom
-   * tiles is a level edit, and this panel is now a place they get made.
-   */
   function handleKey(event: KeyboardEvent): boolean {
     const tool = TOOL_OF_KEY[event.key]
 
     if (tool) {
       selectTool(tool)
-
-      return true
-    }
-
-    if (event.key.toLowerCase() === 'z' && session.undo()) {
-      update()
 
       return true
     }
@@ -1873,6 +1866,10 @@ export function createSkinMode(
     const unbound: TileRole[] = []
     let applied = 0
 
+    if (startsGroundStroke) {
+      session.beginStroke()
+    }
+
     for (const [role, color] of parsed.colors) {
       if (!isRoleBound(draft, role)) {
         unbound.push(role)
@@ -1894,10 +1891,6 @@ export function createSkinMode(
     }
 
     if (parsed.ground !== null) {
-      if (startsGroundStroke) {
-        session.beginStroke()
-      }
-
       session.setGroundColor(parsed.ground)
       isEditingGround = false
       applied += 1
@@ -2124,6 +2117,60 @@ export function createSkinMode(
     setMessage(`Atlas is ${size.width}×${size.height} px.`, 'ok')
   })
 
+  // One object per distinct skin, so the session can tell an edit from a redraw
+  // by identity — see `UndoSlice`.
+  let undoSnapshot: StoredSkin = { draft, sheetDataUrl }
+
+  function readUndoSnapshot(): StoredSkin {
+    if (
+      undoSnapshot.draft !== draft ||
+      undoSnapshot.sheetDataUrl !== sheetDataUrl
+    ) {
+      undoSnapshot = { draft, sheetDataUrl }
+    }
+
+    return undoSnapshot
+  }
+
+  /**
+   * Undo putting an earlier skin back. A different sheet has to be decoded
+   * again, so until it is the panel shows no sheet rather than the bindings
+   * against the wrong one.
+   */
+  function restoreUndoSnapshot(snapshot: StoredSkin): void {
+    const hasSheetChanged = snapshot.sheetDataUrl !== sheetDataUrl
+
+    undoSnapshot = snapshot
+    draft = snapshot.draft
+    sheetDataUrl = snapshot.sheetDataUrl
+    syncSheetInputs()
+    // Undo redraws only the panel that is showing, so the skin saves itself.
+    persist()
+
+    if (!hasSheetChanged) {
+      return
+    }
+
+    sheetImage = null
+    selectedTileIndex = UNBOUND
+    fileInput.value = ''
+
+    if (sheetDataUrl !== null) {
+      const restoring = sheetDataUrl
+
+      void readDataUrlAsImageBitmap(restoring)
+        .then((image) => {
+          if (sheetDataUrl === restoring) {
+            sheetImage = image
+            update()
+          }
+        })
+        .catch(() => {
+          setMessage('Could not decode the restored tile sheet.', 'error')
+        })
+    }
+  }
+
   /**
    * The tiles for a level bundle, or null when there is no skin to ship — no
    * sheet loaded, or a required role still unbound. Exactly the condition that
@@ -2164,5 +2211,6 @@ export function createSkinMode(
     getSkinExport,
     openSkin,
     getStoredSkin: () => ({ draft, sheetDataUrl }),
+    undoSlice: { read: readUndoSnapshot, write: restoreUndoSnapshot },
   }
 }

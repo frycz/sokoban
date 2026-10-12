@@ -4,7 +4,7 @@ import {
   createInitialColorPaletteLibrary,
 } from './color-palette-library'
 import { createColorsMode } from './colors-mode'
-import { requireElement, type EditorMode } from './dom'
+import { isUndoKey, requireElement, type EditorMode } from './dom'
 import { createLevelMode } from './level-mode'
 import { createLevelPicker } from './level-picker'
 import { openLevelBundle, type LevelBundle } from './open-level'
@@ -61,8 +61,20 @@ const levelMode = createLevelMode(session, levelAutosave)
 const modes: Record<ModeName, EditorMode> = {
   level: levelMode,
   skin: skinMode,
-  colors: createColorsMode(colorPalettes),
+  colors: createColorsMode(colorPalettes, () => session.record()),
 }
+
+// The skin and the palettes go on the level's undo stack, so Undo steps back
+// through any edit in any panel, whichever panel is showing.
+session.track(skinMode.undoSlice)
+session.track({
+  read: colorPalettes.current,
+  // Saved here, because Undo redraws only the panel that is showing.
+  write: (library) => {
+    colorPalettes.replace(library)
+    colorPalettes.persist()
+  },
+})
 
 // Not a mode: a level bundle is the level and the tiles together, so the one
 // control that needs both halves sits in the top bar and is owned here, for the
@@ -72,19 +84,11 @@ const publishPanel = createPublishPanel(session, skinMode.getSkinExport, () => {
 })
 
 /**
- * Opening a level from `levels/` replaces both halves, like Export writes both:
- * the document goes through the session, so Undo brings the previous level
- * back, but the skin is not on the undo stack — which is why it asks first.
+ * Opening a level from `levels/` replaces both halves, like Export writes both,
+ * and one Undo brings both back: the skin is swapped before the document, so
+ * the document's entry holds the two together.
  */
 async function openLevel(bundle: LevelBundle): Promise<void> {
-  if (
-    !window.confirm(
-      `Open ${bundle.name}? The level can be undone, but the skin in the Skin panel will be replaced.`,
-    )
-  ) {
-    return
-  }
-
   const opened = openLevelBundle(bundle)
 
   await skinMode.openSkin(opened.skin)
@@ -99,8 +103,8 @@ const levelPicker = createLevelPicker(openLevel, publishPanel.showError)
 /**
  * A save is the same three slices the autosave keeps — level, skin and the
  * publish name — so opening one is opening a level bundle without the repacking:
- * the document through the session, so Undo brings the previous level back, and
- * the skin wholesale. The palettes are not part of it, because they outlive any
+ * the skin and then the document, so one Undo brings the previous work back. The
+ * palettes are not part of it, because they outlive any
  * one level.
  */
 async function openSave(save: EditorSave): Promise<void> {
@@ -200,16 +204,90 @@ requireElement<HTMLButtonElement>('#clear-storage').addEventListener(
   },
 )
 
+const undoButton = requireElement<HTMLButtonElement>('#undo')
+
+function undo(): void {
+  if (!session.undo()) {
+    return
+  }
+
+  // Undo can reach any of the three, so the size fields are squared up and the
+  // showing panel redrawn, whichever panel the edit was made in.
+  levelMode.showReplacedDocument()
+  modes[activeMode].update()
+}
+
+undoButton.addEventListener('click', undo)
+session.onChange(() => {
+  undoButton.disabled = !session.canUndo()
+})
+undoButton.disabled = true
+
+function isTextField(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    (target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT')
+  )
+}
+
+// One gesture, one undo entry. Every pointer press and key press opens a new
+// entry, and so does the first `input` from a control; the rest of its `input`
+// events fold into it — a drag through a colour picker, a name typed — until
+// its `change` closes the visit. Capturing, so the entry is open before any
+// handler edits.
+let inputTarget: EventTarget | null = null
+
+window.addEventListener('pointerdown', () => session.beginStroke(), true)
+window.addEventListener(
+  'keydown',
+  (event) => {
+    if (!isTextField(event.target)) {
+      session.beginStroke()
+    }
+  },
+  true,
+)
+window.addEventListener(
+  'input',
+  (event) => {
+    if (event.target !== inputTarget) {
+      inputTarget = event.target
+      session.beginStroke()
+    }
+  },
+  true,
+)
+window.addEventListener(
+  'change',
+  () => {
+    inputTarget = null
+    session.beginStroke()
+  },
+  true,
+)
+
+// Not every edit redraws — a name being typed does not — so whatever a control
+// changed is recorded once its own handlers are done with it.
+window.addEventListener('input', () => session.record())
+window.addEventListener('change', () => session.record())
+
 window.addEventListener('keydown', (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) {
     return
   }
 
-  const target = event.target as Element | null
-
   // Buttons are deliberately not excluded: clicking a brush leaves it focused,
   // and the number keys have to keep working afterwards.
-  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+  if (isTextField(event.target)) {
+    return
+  }
+
+  if (isUndoKey(event)) {
+    undo()
+    event.preventDefault()
+
     return
   }
 

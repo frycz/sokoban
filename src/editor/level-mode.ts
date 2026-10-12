@@ -40,7 +40,6 @@ export function createLevelMode(
   const widthInput = requireElement<HTMLInputElement>('#width')
   const heightInput = requireElement<HTMLInputElement>('#height')
   const newButton = requireElement<HTMLButtonElement>('#new')
-  const undoButton = requireElement<HTMLButtonElement>('#undo')
   const loadButton = requireElement<HTMLButtonElement>('#load')
   const exportButton = requireElement<HTMLButtonElement>('#export')
   const xsbText = requireElement<HTMLTextAreaElement>('#xsb')
@@ -82,7 +81,7 @@ export function createLevelMode(
     zoom.syncControls()
 
     const validation = validateDocument(editorDocument)
-    undoButton.disabled = !session.canUndo()
+    session.record()
     report.replaceChildren()
 
     const summary = document.createElement('p')
@@ -207,13 +206,6 @@ export function createLevelMode(
     update()
   })
 
-  undoButton.addEventListener('click', () => {
-    if (session.undo()) {
-      syncSizeInputs()
-      update()
-    }
-  })
-
   loadButton.addEventListener('click', () => {
     try {
       session.replace(parseXsbToDocument(xsbText.value))
@@ -258,13 +250,6 @@ export function createLevelMode(
 
     if (brush) {
       selectBrush(brush)
-
-      return true
-    }
-
-    if (event.key.toLowerCase() === 'z' && session.undo()) {
-      syncSizeInputs()
-      update()
 
       return true
     }

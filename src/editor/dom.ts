@@ -25,6 +25,13 @@ export type EditorMode = {
   handleKey?: (event: KeyboardEvent) => boolean
 }
 
+/** U or Z, in either case — Undo, in every panel. */
+export function isUndoKey(event: KeyboardEvent): boolean {
+  const key = event.key.toLowerCase()
+
+  return key === 'u' || key === 'z'
+}
+
 /**
  * A picked file as a data url, which is both what `localStorage` can hold and
  * what a CSS `background-image` and `createImageBitmap` can read — so one

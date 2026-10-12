@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { xsb } from '../core/test-helpers'
 import { createEmptyDocument } from './document'
-import { createSession } from './session'
+import { createSession, UNDO_LIMIT } from './session'
 import { formatDocumentAsXsb, parseXsbToDocument } from './xsb'
 
 const positionOf = (width: number, x: number, y: number) => y * width + x
@@ -116,5 +116,88 @@ describe('createSession', () => {
     expect(formatDocumentAsXsb(session.current())).toBe(
       xsb('####', '####', '####'),
     )
+  })
+
+  it(`reaches back ${UNDO_LIMIT} edits and no further`, () => {
+    const session = createSession(createEmptyDocument(3, 3))
+
+    for (let width = 4; width < 4 + UNDO_LIMIT + 5; width++) {
+      session.beginStroke()
+      session.resize(width, 3)
+    }
+
+    let undone = 0
+
+    while (session.undo()) {
+      undone += 1
+    }
+
+    expect(undone).toBe(UNDO_LIMIT)
+  })
+
+  it('undoes an edit to a tracked slice and writes it back', () => {
+    const session = createSession(createEmptyDocument(3, 3))
+    let value = { name: 'a' }
+    session.track({
+      read: () => value,
+      write: (restored) => {
+        value = restored
+      },
+    })
+    const original = value
+
+    session.beginStroke()
+    value = { name: 'b' }
+
+    expect(session.record()).toBe(true)
+    expect(session.record()).toBe(false)
+
+    session.undo()
+
+    expect(value).toBe(original)
+    expect(session.canUndo()).toBe(false)
+  })
+
+  it('folds slice edits made in one stroke into one entry', () => {
+    const session = createSession(createEmptyDocument(3, 3))
+    let value = 0
+    session.track({
+      read: () => value,
+      write: (restored) => {
+        value = restored
+      },
+    })
+
+    session.beginStroke()
+    value = 1
+    session.record()
+    value = 2
+    session.record()
+    session.undo()
+
+    expect(value).toBe(0)
+    expect(session.canUndo()).toBe(false)
+  })
+
+  it('undoes a document edit and a slice edit from one gesture together', () => {
+    const session = createSession(createEmptyDocument(3, 3))
+    let value = 0
+    session.track({
+      read: () => value,
+      write: (restored) => {
+        value = restored
+      },
+    })
+
+    session.beginStroke()
+    value = 1
+    session.resize(5, 5)
+    value = 2
+    session.record()
+    session.undo()
+
+    expect(value).toBe(0)
+    expect(session.current().width).toBe(3)
+    expect(session.canUndo()).toBe(false)
   })
 })

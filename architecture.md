@@ -290,7 +290,7 @@ would reject silently is worse than one that was never there.
 
 The editor's top bar has an **open level…** picker listing every bundle in `levels/`, in `order.json` order and then by slug. It reads through the same dev-server endpoint Export writes through — `GET /api/levels` lists, `GET /api/levels/<slug>` returns one bundle in the shape the export posts — rather than through the game's globs, because a glob over `levels/` would reload the editor every time it exported.
 
-The game never has the sheet a skin was cut from, only the packed atlas, so the atlas comes back as the sheet: the manifest's tile size, margin and spacing slice it into one tile per column, role `n` is bound to tile `n`, and an art tile's column is its tile index (`open-level.ts`). Inks are already pixels in the atlas, so everything opens untinted and exporting again repacks the same pixels. The document goes through `session.replace`, so Undo brings the previous level back; the skin is not on the undo stack, which is why opening asks first.
+The game never has the sheet a skin was cut from, only the packed atlas, so the atlas comes back as the sheet: the manifest's tile size, margin and spacing slice it into one tile per column, role `n` is bound to tile `n`, and an art tile's column is its tile index (`open-level.ts`). Inks are already pixels in the atlas, so everything opens untinted and exporting again repacks the same pixels. The skin is swapped before the document goes through `session.replace`, so one Undo brings the previous level and skin back.
 
 A directory is a slug of the name only for levels the editor made — `Original 1` lives in `original-01/` — so the publish panel remembers the directory a level was opened from and sends it with the export for as long as the name is left alone. Renaming exports to a new directory, as before.
 
@@ -559,6 +559,12 @@ The severities are a real line, not a mood: `error` means `parseStringToLevelSta
 
 `session.beginStroke()` opens an undo entry and every `paint` until the next one folds into it, so dragging across twenty cells undoes once. `paintDocument` returns the same object when the cell already looked like that, so a stroke that changed nothing records nothing — the same identity contract `step` has with the host.
 
+### One undo stack for every panel
+
+Undo covers every edit in every panel, up to `UNDO_LIMIT` (10) edits back. The session owns the document; the skin (draft and sheet) and the colour palettes stay with their owners and are registered with `session.track` as `UndoSlice`s, so each entry is a snapshot of all three. Every one of them is immutable and replaced wholesale, so a snapshot is three references and a change is told from a redraw by identity. `session.record()` captures whatever the slices changed; it is called from each mode's `update()` — the same hook autosave uses — and after every `input` and `change` event, for the edits that do not redraw.
+
+Strokes are opened by `index.ts`, not by each control: every `pointerdown` and every key press outside a text field calls `beginStroke`, as does the first `input` from a control, and its `change` closes the visit. So one gesture is one entry — a drag across cells, a drag through a colour picker, a name typed — and an edit that changes the document and the skin together (a new sheet clears the bindings and the placements) undoes in one step. Undo is the top bar's button and U or Z in every mode. Selections, tools, ink and zoom are view state and are not on the stack.
+
 ### Every change is autosaved
 
 The editor writes to `localStorage` on every edit and opens where it was left. Four keys — `sokoban.editor.level`, `sokoban.editor.skin`, `sokoban.editor.publish` and `sokoban.editor.palettes` — each written only by the one thing that owns that state, so no two of them ever coordinate a read-modify-write of one shared record.
@@ -571,7 +577,7 @@ The `palettes` slice is the same arrangement one step further out: colours mode 
 
 ### Live link from the colour picker
 
-The theme colour picker (`../theme-color-picker`) can push its open set to the editor so role colours follow it without copy and paste. The picker is another origin, so it posts to `/api/live-colors` on the editor's dev server; `tools/live-colors-plugin.ts` keeps the last set (for a GET from a page that opens later) and relays it down the HMR socket as a `live-colors` event. `editor/live-colors.ts` is the page's end, and skin mode's **follow colour picker** toggle applies each set through the same path as the Import colors from JSON dialog. The toggle is remembered in the `live` slice. A burst of sets from a drag folds into one undo entry for the ground. Dev only: a built editor has no `import.meta.hot` and hides the toggle.
+The theme colour picker (`../theme-color-picker`) can push its open set to the editor so role colours follow it without copy and paste. The picker is another origin, so it posts to `/api/live-colors` on the editor's dev server; `tools/live-colors-plugin.ts` keeps the last set (for a GET from a page that opens later) and relays it down the HMR socket as a `live-colors` event. `editor/live-colors.ts` is the page's end, and skin mode's **follow colour picker** toggle applies each set through the same path as the Import colors from JSON dialog. The toggle is remembered in the `live` slice. A burst of sets from a drag folds into one undo entry. Dev only: a built editor has no `import.meta.hot` and hides the toggle.
 
 The undo stack does not persist. A reload is a new session, and the document is the work.
 
@@ -615,7 +621,7 @@ the same reason it resets the panels.
 
 A palette is a named list of hexes an author keeps across a level — the inks a sprite set is drawn with, the ground it sits on, the ramp a tileset came from. Nothing in a level or a skin refers to one: it is a place to put colours so they can be copied back out, which is why it is its own mode and its own storage key rather than a field on either.
 
-That is also why palettes are not on the undo stack. The stack is the document's, and the document knows nothing about them, so deleting a palette asks first instead — the same deal Clear storage gets, for the same reason: the panel holds the only copy.
+Palettes are on the undo stack all the same, as a slice of their own — see "One undo stack for every panel". Deleting one still asks first, because Undo only reaches back ten edits.
 
 "Palette" already meant the grid a tile sheet is cut into, in `skin/palette.ts`. The colour kind therefore says `colorPalette` in full everywhere — `ColorPalette`, `colors-mode.ts`, `#palette-swatches` against the older `#sheet-palette` — so neither ever reads as the other.
 

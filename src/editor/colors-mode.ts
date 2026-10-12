@@ -47,7 +47,14 @@ const INITIAL_PICKED_COLOR = '#ffffff'
  * library on every redraw rather than kept in step with it by hand, so an edit
  * that removes what was selected cannot leave a selection pointing at nothing.
  */
-export function createColorsMode(store: ColorPaletteLibraryStore): EditorMode {
+/**
+ * `record` puts the palettes' edits on the editor's undo stack; the session is
+ * the level's, so this panel is handed only the one call it needs.
+ */
+export function createColorsMode(
+  store: ColorPaletteLibraryStore,
+  record: () => void,
+): EditorMode {
   const paletteList = requireElement<HTMLElement>('#palette-list')
   const newNameInput = requireElement<HTMLInputElement>('#new-palette-name')
   const newButton = requireElement<HTMLButtonElement>('#palette-new')
@@ -161,6 +168,7 @@ export function createColorsMode(store: ColorPaletteLibraryStore): EditorMode {
 
   function update(): void {
     store.persist()
+    record()
 
     const palette = resolveSelection()
 
@@ -237,9 +245,8 @@ export function createColorsMode(store: ColorPaletteLibraryStore): EditorMode {
   })
 
   /**
-   * Deleting is the one edit that cannot be taken back — palettes are not on
-   * the undo stack, which is the document's — so it asks, the same way clearing
-   * storage does.
+   * Deleting asks first, the same way clearing storage does: it is undoable, but
+   * only while it is still among the last few edits.
    */
   deleteButton.addEventListener('click', () => {
     const palette = resolveSelection()

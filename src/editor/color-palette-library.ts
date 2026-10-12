@@ -15,9 +15,7 @@ import {
  * for the same reason: the slice belongs to neither panel, so neither owns the
  * key.
  *
- * It is not on the undo stack. The stack is the document's, and a palette is
- * not part of the level — it is a thing kept beside it, which is why deleting
- * one asks first instead.
+ * It is on the undo stack as a slice of its own — see `UndoSlice`.
  */
 export type ColorPaletteLibraryStore = {
   current: () => ColorPaletteLibrary
