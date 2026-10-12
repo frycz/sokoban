@@ -507,41 +507,40 @@ layout.ts │  stored-state.ts │            pure
     canvas.ts  zoom.ts  │  storage.ts │   localStorage: a leaf
         └─────────┴─────┴──────┴──────┴→ the DOM: level-mode.ts, skin-mode.ts,
                                          colors-mode.ts, publish.ts, index.ts
+```
 
 The colour palettes hang off the same spine, with their own slice:
 
 ```
-
-render/colors.ts the hex format, shared
-↑
-hex.ts color-palettes.ts pure
-│ ↑
-│ color-palette-library.ts mutable, no DOM — the slice
-│ │
-└── swatches.ts ─┴→ colors-mode.ts, skin-mode.ts the DOM
-
+render/colors.ts                          the hex format, shared
+      ↑
+    hex.ts      color-palettes.ts         pure
+      │                ↑
+      │      color-palette-library.ts     mutable, no DOM — the slice
+      │                │
+      └── swatches.ts ─┴→ colors-mode.ts, skin-mode.ts      the DOM
 ```
 
-| File               | Role                                                                                                                                                              |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `document.ts`      | `EditorDocument`, `Cell`, `Brush`, `CustomTiles`, and the pure edits: `createEmptyDocument`, `paintDocument`, `setCustomTile`, `setGroundColor`, `resizeDocument` |
-| `xsb.ts`           | `parseXsbToDocument` / `formatDocumentAsXsb` — the only text I/O                                                                                                  |
-| `validate.ts`      | `validateDocument(document)` → problems, counts, `isPlayable`                                                                                                     |
-| `stored-state.ts`  | encode / decode of what autosave keeps, for both modes. Pure                                                                                                      |
-| `session.ts`       | the undo stack, the editor's one mutable value. No DOM                                                                                                            |
-| `autosave.ts`      | the `level` slice: what the editor opens on, and the write both modes share                                                                                       |
-| `layout.ts`        | tile size, origin, the canvas size a zoom needs, and pixel → cell. Pure                                                                                           |
-| `canvas.ts`        | `(document, hoverPosition, zoom) => draw`. No logic                                                                                                               |
-| `zoom.ts`          | the zoom shared by the three scrolling views: two buttons, ctrl + wheel, scroll anchoring, and where the steps stop                                               |
-| `backing-store.ts` | the canvas resize all three zooming painters share, and the pixel budget the zoom stops at                                                                        |
-| `storage.ts`       | the four `localStorage` keys, every call guarded. Imports nothing                                                                                                 |
-| `publish.ts`       | the Export to levels/ panel: gate on `validateDocument`, then post the bundle                                                                                     |
-| `index.ts`         | the mode switch, Clear storage, and the keys and resizes each mode gets                                                                                           |
-| `hex.ts`           | hex as an author types and pastes it: `parseHexColor`, `parseHexColors`, `formatHexColors`. Pure                                                                   |
-| `color-palettes.ts` | `ColorPalette`, `ColorPaletteLibrary`, and the pure edits on them. Pure                                                                                           |
-| `color-palette-library.ts` | the `palettes` slice: what the editor opens on, and the write colours mode makes                                                                           |
-| `swatches.ts`      | the swatch list both colour panels draw, and the reader for a click on one                                                                                        |
-| `colors-mode.ts`   | the colours panel: the library, one picker, and the paste box                                                                                                     |
+| File                       | Role                                                                                                                                                              |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `document.ts`              | `EditorDocument`, `Cell`, `Brush`, `CustomTiles`, and the pure edits: `createEmptyDocument`, `paintDocument`, `setCustomTile`, `setGroundColor`, `resizeDocument` |
+| `xsb.ts`                   | `parseXsbToDocument` / `formatDocumentAsXsb` — the only text I/O                                                                                                  |
+| `validate.ts`              | `validateDocument(document)` → problems, counts, `isPlayable`                                                                                                     |
+| `stored-state.ts`          | encode / decode of what autosave keeps, for both modes. Pure                                                                                                      |
+| `session.ts`               | the undo stack, the editor's one mutable value. No DOM                                                                                                            |
+| `autosave.ts`              | the `level` slice: what the editor opens on, and the write both modes share                                                                                       |
+| `layout.ts`                | tile size, origin, the canvas size a zoom needs, and pixel → cell. Pure                                                                                           |
+| `canvas.ts`                | `(document, hoverPosition, zoom) => draw`. No logic                                                                                                               |
+| `zoom.ts`                  | the zoom shared by the three scrolling views: two buttons, ctrl + wheel, scroll anchoring, and where the steps stop                                               |
+| `backing-store.ts`         | the canvas resize all three zooming painters share, and the pixel budget the zoom stops at                                                                        |
+| `storage.ts`               | the four `localStorage` keys, every call guarded. Imports nothing                                                                                                 |
+| `publish.ts`               | the Export to levels/ panel: gate on `validateDocument`, then post the bundle                                                                                     |
+| `index.ts`                 | the mode switch, Clear storage, and the keys and resizes each mode gets                                                                                           |
+| `hex.ts`                   | hex as an author types and pastes it: `parseHexColor`, `parseHexColors`, `formatHexColors`. Pure                                                                  |
+| `color-palettes.ts`        | `ColorPalette`, `ColorPaletteLibrary`, and the pure edits on them. Pure                                                                                           |
+| `color-palette-library.ts` | the `palettes` slice: what the editor opens on, and the write colours mode makes                                                                                  |
+| `swatches.ts`              | the swatch list both colour panels draw, and the reader for a click on one                                                                                        |
+| `colors-mode.ts`           | the colours panel: the library, one picker, and the paste box                                                                                                     |
 
 `backing-store.ts` is left out of the diagram to keep it readable: it is a leaf under `canvas.ts` and `zoom.ts`, and under the two painters in `skin/` as well, which is the point of it — the pixel budget the zoom stops at and the resize that honours it are one number in one place.
 
