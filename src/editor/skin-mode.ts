@@ -29,6 +29,7 @@ import { readSwatchClick, renderSwatches, type SwatchAction } from './swatches'
 import { computeGridLayout, getPositionAtPixel } from './layout'
 import type { SkinExport } from './publish'
 import type { Session, UndoSlice } from './session'
+import { pushRecent } from './recent'
 import { readStoredText, writeStoredText } from './storage'
 import { createZoomControl } from './zoom'
 import {
@@ -56,7 +57,11 @@ import {
   parseRoleColors,
   type RoleColorImport,
 } from './skin/role-colors'
-import { getSheetGrid, getSourceTileRect } from '../render/sheet'
+import {
+  getSheetGrid,
+  getSourceTileRect,
+  type SheetSettings,
+} from '../render/sheet'
 import { computeSheetLayout, getTileIndexAtPixel } from './skin/palette-layout'
 import {
   UNBOUND,
@@ -76,7 +81,7 @@ import {
   unbindRole,
   type SkinDraft,
 } from './skin/skin'
-import { NO_TINT, readTint, type Tint } from './tint'
+import { NO_TINT, isIdentityTint, readTint, type Tint } from './tint'
 import { createTintedTileCache } from './skin/tinted-tiles'
 
 const THUMBNAIL_SIZE = 24
@@ -145,6 +150,15 @@ const TOOL_OF_KEY: Record<string, PreviewTool | undefined> = {
   '2': 'place',
   '3': 'erase',
   '4': 'recolor',
+}
+
+function isSameSlicing(a: SheetSettings, b: SheetSettings): boolean {
+  return (
+    a.tileWidth === b.tileWidth &&
+    a.tileHeight === b.tileHeight &&
+    a.margin === b.margin &&
+    a.spacing === b.spacing
+  )
 }
 
 /** What a built-in layer is called in the layer list. */
@@ -234,6 +248,8 @@ export function createSkinMode(
   )
   const paletteSelect = requireElement<HTMLSelectElement>('#skin-palette')
   const paletteSwatches = requireElement<HTMLElement>('#skin-palette-swatches')
+  const recentTilesList = requireElement<HTMLElement>('#recent-tiles')
+  const recentColorsList = requireElement<HTMLElement>('#recent-colors')
   const paletteReport = requireElement<HTMLElement>('#skin-palette-report')
   const atlasButton = requireElement<HTMLButtonElement>('#export-atlas')
   const manifestButton = requireElement<HTMLButtonElement>('#export-manifest')
@@ -287,6 +303,16 @@ export function createSkinMode(
   // cell for a placement — so the picker itself has nothing to remember.
   let ink: Tint = NO_TINT
   let showSkinTiles = true
+  // The last tiles and colours put to use, newest first. View state like the
+  // ink: a shortcut back to them, nothing the skin or the level keeps. The tiles
+  // are indices, so they remember the sheet and slicing they were picked
+  // against and are dropped once either changes.
+  let recentTiles: readonly number[] = []
+  let recentTilesSheet: {
+    readonly image: ImageBitmap | null
+    readonly settings: SheetSettings
+  } = { image: null, settings: draft.sheet }
+  let recentColors: readonly string[] = []
   let hoverPosition = -1
   let isPlacing = false
   // Whether the ground picker is mid-visit. A colour input fires `input` for
@@ -1000,6 +1026,91 @@ export function createSkinMode(
     paletteReport.append(line)
   }
 
+  /** Drops the recent tiles when the sheet they index is no longer the one loaded. */
+  function syncRecentTilesSheet(): void {
+    if (
+      recentTilesSheet.image === sheetImage &&
+      isSameSlicing(recentTilesSheet.settings, draft.sheet)
+    ) {
+      return
+    }
+
+    recentTiles = []
+    recentTilesSheet = { image: sheetImage, settings: draft.sheet }
+  }
+
+  function noteTileUsed(tileIndex: number): void {
+    if (tileIndex === UNBOUND) {
+      return
+    }
+
+    syncRecentTilesSheet()
+    recentTiles = pushRecent(recentTiles, tileIndex)
+  }
+
+  /** Only a colour that does something — no ink is not a colour picked. */
+  function noteTintUsed(tint: Tint): void {
+    if (!isIdentityTint(tint)) {
+      noteColorUsed(tint.color)
+    }
+  }
+
+  function noteColorUsed(color: string | null): void {
+    if (color !== null) {
+      recentColors = pushRecent(recentColors, color)
+    }
+  }
+
+  /**
+   * The tiles untinted, because clicking one selects only the tile — the ink it
+   * is used with is whatever the ink is then.
+   */
+  function renderRecent(): void {
+    syncRecentTilesSheet()
+    recentTilesList.replaceChildren()
+
+    const grid = sheetImage
+      ? getSheetGrid(draft.sheet, sheetImage.width, sheetImage.height)
+      : null
+
+    if (sheetImage && grid && recentTiles.length > 0) {
+      for (const tileIndex of recentTiles) {
+        const rect = getSourceTileRect(draft.sheet, grid, tileIndex)
+
+        if (rect.width <= 0) {
+          continue
+        }
+
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.dataset.recentTile = String(tileIndex)
+        button.title = `Select tile #${tileIndex}`
+        button.setAttribute(
+          'aria-pressed',
+          String(tileIndex === selectedTileIndex),
+        )
+
+        const thumbnail = document.createElement('canvas')
+        thumbnail.width = THUMBNAIL_SIZE
+        thumbnail.height = THUMBNAIL_SIZE
+        drawThumbnail(thumbnail, getTintedTile(sheetImage, rect, NO_TINT))
+
+        button.append(thumbnail)
+        recentTilesList.append(button)
+      }
+    } else {
+      const empty = document.createElement('p')
+      empty.className = 'swatch-empty'
+      empty.textContent = 'No tiles used yet.'
+      recentTilesList.append(empty)
+    }
+
+    renderSwatches(recentColorsList, recentColors, PALETTE_SWATCH_ACTIONS, {
+      selectedIndex: -1,
+      emptyMessage: 'No colours used yet.',
+    })
+  }
+
   function copyHex(color: string): void {
     void copyTextToClipboard(color).then((copied) => {
       paletteNote = {
@@ -1039,6 +1150,7 @@ export function createSkinMode(
     renderGroundControls()
     renderTileBackgroundControls()
     renderColorPalette()
+    renderRecent()
     paletteZoom.syncControls()
     previewZoom.syncControls()
     paintPreviewOnly()
@@ -1076,6 +1188,7 @@ export function createSkinMode(
     }
 
     draft = bindRole(draft, role, selectedTileIndex)
+    noteTileUsed(selectedTileIndex)
     update()
   }
 
@@ -1173,6 +1286,7 @@ export function createSkinMode(
     hiddenLayerIds = new Set()
     soloLayerId = null
     ink = NO_TINT
+    recentColors = []
     selectedPaletteId = null
     paletteNote = null
     showSkinTiles = true
@@ -1325,19 +1439,31 @@ export function createSkinMode(
     }
 
     if (previewTool === 'recolor') {
-      return session.recolorCustomTile(layer.id, position, ink)
+      const recolored = session.recolorCustomTile(layer.id, position, ink)
+
+      if (recolored) {
+        noteTintUsed(ink)
+      }
+
+      return recolored
     }
 
     // Re-stamping an occupied cell swaps its tile and keeps its colour, as
     // binding does; the recolor tool is how a placed tile's colour changes.
-    const placed = layer.tiles.get(position)
-
-    return session.placeCustomTile(
+    const tint = layer.tiles.get(position)?.tint ?? ink
+    const isPlaced = session.placeCustomTile(
       layer.id,
       position,
       selectedTileIndex,
-      placed?.tint ?? ink,
+      tint,
     )
+
+    if (isPlaced) {
+      noteTileUsed(selectedTileIndex)
+      noteTintUsed(tint)
+    }
+
+    return isPlaced
   }
 
   function selectTool(tool: PreviewTool): void {
@@ -1576,6 +1702,8 @@ export function createSkinMode(
 
   groundColorInput.addEventListener('change', () => {
     isEditingGround = false
+    noteColorUsed(session.current().groundColor)
+    renderRecent()
   })
 
   /**
@@ -1608,6 +1736,8 @@ export function createSkinMode(
   groundHexInput.addEventListener('change', () => {
     isEditingGround = false
     groundHexInput.value = session.current().groundColor ?? ''
+    noteColorUsed(session.current().groundColor)
+    renderRecent()
   })
 
   groundHexInput.addEventListener('keydown', commitFieldOnEnter)
@@ -1661,6 +1791,8 @@ export function createSkinMode(
 
   tileBackgroundHexInput.addEventListener('change', () => {
     tileBackgroundHexInput.value = draft.background ?? ''
+    noteColorUsed(draft.background)
+    renderRecent()
   })
 
   tileBackgroundHexInput.addEventListener('keydown', commitFieldOnEnter)
@@ -1690,6 +1822,28 @@ export function createSkinMode(
     // Both actions a row offers are the same one: the chip is a big target for
     // the copy the button spells out.
     copyHex(palette.colors[click.index])
+  })
+
+  recentTilesList.addEventListener('click', (event) => {
+    const tileIndex = Number(
+      (event.target as Element).closest<HTMLElement>('button[data-recent-tile]')
+        ?.dataset.recentTile,
+    )
+
+    if (Number.isInteger(tileIndex)) {
+      selectedTileIndex = tileIndex
+      update()
+    }
+  })
+
+  // The chip-and-hex and the copy button both copy: the hex is read-only, so
+  // copying it is all a click on it can mean.
+  recentColorsList.addEventListener('click', (event) => {
+    const click = readSwatchClick(event.target as Element)
+
+    if (click !== null) {
+      copyHex(recentColors[click.index])
+    }
   })
 
   inkControls.addEventListener('click', (event) => {
@@ -1774,9 +1928,11 @@ export function createSkinMode(
 
     if (input.dataset.roleHex) {
       input.value = draft.tints[input.dataset.roleHex as TileRole].color
+      noteColorUsed(input.value)
     } else if (input.dataset.roleBackground) {
       input.value =
         draft.tints[input.dataset.roleBackground as TileRole].background ?? ''
+      noteColorUsed(input.value === '' ? null : input.value)
     } else {
       return
     }
@@ -1817,6 +1973,7 @@ export function createSkinMode(
         inked as TileRole,
         getInkFor(inked as TileRole),
       )
+      noteTintUsed(ink)
       update()
 
       return

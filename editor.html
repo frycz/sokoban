@@ -542,6 +542,23 @@
         background-color: #0c0e14;
         image-rendering: pixelated;
       }
+      /* The last tiles used, to pick again without hunting the sheet for them. */
+      #recent-tiles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-bottom: 6px;
+      }
+      #recent-tiles button {
+        padding: 3px;
+        line-height: 0;
+      }
+      #recent-tiles canvas {
+        width: 24px;
+        height: 24px;
+        background-color: #0c0e14;
+        image-rendering: pixelated;
+      }
       #role-list .bound {
         margin-left: auto;
         color: #7d8699;
@@ -836,6 +853,10 @@
             flat
           </button>
         </div>
+
+        <h2>Recently used</h2>
+        <div id="recent-tiles"></div>
+        <div class="swatches" id="recent-colors"></div>
 
         <h2>Colour palette</h2>
         <div class="report" id="skin-palette-report"></div>
