@@ -1066,20 +1066,16 @@ export function createSkinMode(
   }
 
   /**
-   * Binding is one gesture that sets both halves of a column — the tile and the
-   * ink it ships in — because that is what the author just chose in the sidebar.
-   * The per-row ink button is how the colour is changed without the tile.
+   * Binding swaps the tile and keeps the role's colour, so trying another tile
+   * does not throw away a palette already chosen. The per-row ink button is how
+   * the colour is changed.
    */
   function assign(role: TileRole): void {
     if (!sheetImage || selectedTileIndex === UNBOUND) {
       return
     }
 
-    draft = setRoleTint(
-      bindRole(draft, role, selectedTileIndex),
-      role,
-      getInkFor(role),
-    )
+    draft = bindRole(draft, role, selectedTileIndex)
     update()
   }
 
@@ -1315,11 +1311,12 @@ export function createSkinMode(
    * stroke, and the pointer handler splits it off before here.
    */
   function applyPlacementTool(position: number): boolean {
-    const layer = resolveSelectedLayer()
+    const selected = resolveSelectedLayer()
+    const layer = selected && getArtLayer(session.current(), selected.id)
 
     // A built-in layer is drawn from the cells, so there is nothing in it to
     // paint — the report already says so.
-    if (!layer || !getArtLayer(session.current(), layer.id)) {
+    if (!layer) {
       return false
     }
 
@@ -1331,7 +1328,16 @@ export function createSkinMode(
       return session.recolorCustomTile(layer.id, position, ink)
     }
 
-    return session.placeCustomTile(layer.id, position, selectedTileIndex, ink)
+    // Re-stamping an occupied cell swaps its tile and keeps its colour, as
+    // binding does; the recolor tool is how a placed tile's colour changes.
+    const placed = layer.tiles.get(position)
+
+    return session.placeCustomTile(
+      layer.id,
+      position,
+      selectedTileIndex,
+      placed?.tint ?? ink,
+    )
   }
 
   function selectTool(tool: PreviewTool): void {
