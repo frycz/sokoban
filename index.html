@@ -121,7 +121,7 @@
         animation-timing-function: ease-out;
       }
 
-      /* A crate pushed onto a goal — the whole game in three cells. */
+      /* A player, a crate and a goal — the whole game in three cells. */
       .motif {
         display: flex;
         align-items: center;
@@ -155,31 +155,23 @@
             transparent 56%
           ),
           #3a3020;
-        animation: push 2.8s ease-in-out infinite;
       }
       .motif .goal {
         border: 2px dashed var(--muted);
         border-radius: 4px;
       }
-      /* Pushed, a rest, then eased back — a loop with no snap. */
-      @keyframes push {
-        0%,
-        15% {
-          transform: translateX(0);
-        }
-        45%,
-        65% {
-          transform: translateX(6px);
-        }
-        90%,
-        100% {
-          transform: translateX(0);
-        }
+      /* Drawn with the default skin's tiles instead: the cells take the
+         tile's size and lose the CSS shapes. See paintMotif. */
+      .motif.skinned span {
+        display: flex;
+        width: auto;
+        height: auto;
+        border: none;
+        border-radius: 0;
+        background: none;
       }
-      @media (prefers-reduced-motion: reduce) {
-        .motif .crate {
-          animation: none;
-        }
+      .motif.skinned .player {
+        transform: none;
       }
 
       .menu {

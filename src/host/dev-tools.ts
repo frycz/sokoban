@@ -24,6 +24,8 @@ export type GameControls = {
   ) => void
   /** The level `default-skin.json` named when the game loaded, or null. */
   readonly defaultSkin: string | null
+  /** Tells the game the default skin changed, so the title draws with it. */
+  readonly setDefaultSkin: (from: string | null) => void
   readonly problems: readonly string[]
   readonly addScreen: (screen: HTMLElement) => void
   readonly showScreen: (screen: HTMLElement) => void
@@ -567,6 +569,7 @@ export function createDevTools(game: GameControls): DevTools {
       }
 
       defaultSkin = from
+      game.setDefaultSkin(from)
       game.setLevels(
         applyDefaultSkin(game.levels(), from).levels,
         game.disabled(),

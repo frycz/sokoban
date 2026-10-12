@@ -1,6 +1,8 @@
 import { isSolved } from '../core/rules'
 import type { LevelState } from '../core/types'
 import { createRenderer, type Motion } from '../render/canvas'
+import { getSkinTileRect } from '../render/skin'
+import type { TileRole } from '../render/tile-roles'
 import {
   createHistory,
   restoreHistory,
@@ -82,6 +84,7 @@ function requireElement<T extends Element>(selector: string): T {
 const titleSection = requireElement<HTMLElement>('#title')
 const titlePrompt = requireElement<HTMLElement>('#title-prompt')
 const titleMenuSlot = requireElement<HTMLElement>('#title-menu')
+const titleMotif = requireElement<HTMLElement>('#title .motif')
 const levelsSection = requireElement<HTMLElement>('#levels')
 const levelsGridSlot = requireElement<HTMLElement>('#levels-grid')
 const gameSection = requireElement<HTMLElement>('#game')
@@ -130,6 +133,8 @@ let allLevels: readonly PlayableLevel[] = []
 let disabledSlugs: ReadonlySet<string> = new Set()
 /** The campaign: every level that is not disabled, in `order.json` order. */
 let levels: readonly PlayableLevel[] = []
+/** The level `levels/default-skin.json` lends a skin from, or null for none. */
+let defaultSkinSlug: string | null = null
 let save: Save = { current: null, completed: [] }
 
 /** The level on the board, or null when there is none. */
@@ -417,6 +422,65 @@ function startNewGame(): void {
 function startCampaignAt(index: number): void {
   save = { current: null, completed: [] }
   startLevel(index)
+}
+
+// --- The title motif ------------------------------------------------------
+
+/** How big the motif's cells are when drawn in CSS alone. */
+const MOTIF_CELL_PX = 28
+
+/**
+ * The title's player, crate and goal, drawn with the default skin's tiles so
+ * the first screen looks like the game that follows — or left to the CSS
+ * shapes when there is no default skin. A pixelated skin scales by a whole
+ * number, so its pixels stay square.
+ */
+function paintMotif(): void {
+  const skin =
+    allLevels.find((level) => level.slug === defaultSkinSlug)?.ownSkin ?? null
+  const cells: [string, TileRole][] = [
+    ['.player', 'player'],
+    ['.crate', 'box'],
+    ['.goal', 'goal'],
+  ]
+  const tiles = cells.map(([selector, role]) => ({
+    cell: requireElement<HTMLElement>(`#title .motif ${selector}`),
+    rect: skin && getSkinTileRect(skin, role),
+  }))
+  const isSkinned = skin !== null && tiles.every(({ rect }) => rect)
+
+  titleMotif.classList.toggle('skinned', isSkinned)
+
+  for (const { cell, rect } of tiles) {
+    if (!isSkinned || !skin || !rect) {
+      cell.replaceChildren()
+      continue
+    }
+
+    const tile = document.createElement('canvas')
+    const scale = skin.isPixelated
+      ? Math.max(1, Math.round(MOTIF_CELL_PX / rect.height))
+      : MOTIF_CELL_PX / rect.height
+    tile.width = rect.width
+    tile.height = rect.height
+    tile.style.width = `${rect.width * scale}px`
+    tile.style.height = `${rect.height * scale}px`
+    tile.style.imageRendering = skin.isPixelated ? 'pixelated' : 'auto'
+    tile
+      .getContext('2d')
+      ?.drawImage(
+        skin.image,
+        rect.x,
+        rect.y,
+        rect.width,
+        rect.height,
+        0,
+        0,
+        rect.width,
+        rect.height,
+      )
+    cell.replaceChildren(tile)
+  }
 }
 
 // --- The board --------------------------------------------------------------
@@ -886,10 +950,17 @@ function setLevels(
   allLevels = ordered
   disabledSlugs = new Set(disabled)
   levels = ordered.filter((level) => !disabledSlugs.has(level.slug))
+  paintMotif()
+}
+
+function setDefaultSkin(from: string | null): void {
+  defaultSkinSlug = from
+  paintMotif()
 }
 
 async function start(): Promise<void> {
   const catalog = await loadLevelCatalog()
+  defaultSkinSlug = catalog.defaultSkin
   setLevels(catalog.levels, catalog.disabled)
   save = readStoredSave(SAVE_KEY) ?? save
 
@@ -901,6 +972,7 @@ async function start(): Promise<void> {
       disabled: () => disabledSlugs,
       setLevels,
       defaultSkin: catalog.defaultSkin,
+      setDefaultSkin,
       problems: catalog.problems,
       addScreen: (screen) => {
         screens.push(screen)
