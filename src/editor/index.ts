@@ -9,9 +9,17 @@ import { createLevelMode } from './level-mode'
 import { createLevelPicker } from './level-picker'
 import { openLevelBundle, type LevelBundle } from './open-level'
 import { createPublishPanel } from './publish'
+import { createSavePanel } from './save-panel'
+import { createSaveStore, type EditorSave } from './saves'
 import { createSession } from './session'
 import { createSkinMode } from './skin-mode'
 import { clearStoredEditor, readStoredText, writeStoredText } from './storage'
+import {
+  decodeStoredLevel,
+  decodeStoredSkin,
+  encodeStoredLevel,
+  encodeStoredSkin,
+} from './stored-state'
 
 const MODE_NAMES = ['level', 'skin', 'colors'] as const
 
@@ -88,6 +96,43 @@ async function openLevel(bundle: LevelBundle): Promise<void> {
 
 const levelPicker = createLevelPicker(openLevel, publishPanel.showError)
 
+/**
+ * A save is the same three slices the autosave keeps — level, skin and the
+ * publish name — so opening one is opening a level bundle without the repacking:
+ * the document through the session, so Undo brings the previous level back, and
+ * the skin wholesale. The palettes are not part of it, because they outlive any
+ * one level.
+ */
+async function openSave(save: EditorSave): Promise<void> {
+  const opened = decodeStoredLevel(save.level)
+
+  if (!opened) {
+    throw new Error(`“${save.name}” has no level this build can read.`)
+  }
+
+  await skinMode.openSkin(decodeStoredSkin(save.skin))
+  session.replace(opened)
+  levelMode.showReplacedDocument()
+  publishPanel.restore(save.publish)
+  modes[activeMode].update()
+}
+
+const savePanel = createSavePanel({
+  store: createSaveStore(),
+  getSnapshot: () => {
+    const skin = skinMode.getStoredSkin()
+
+    return {
+      level: encodeStoredLevel(session.current()),
+      skin: encodeStoredSkin(skin.draft, skin.sheetDataUrl),
+      publish: publishPanel.getHome(),
+    }
+  },
+  onOpen: openSave,
+  showMessage: publishPanel.showMessage,
+  showError: publishPanel.showError,
+})
+
 const sections: Record<ModeName, HTMLElement> = {
   level: requireElement<HTMLElement>('#level-mode'),
   skin: requireElement<HTMLElement>('#skin-mode'),
@@ -135,7 +180,11 @@ for (const name of MODE_NAMES) {
 requireElement<HTMLButtonElement>('#clear-storage').addEventListener(
   'click',
   () => {
-    if (!window.confirm('Clear saved state and start over?')) {
+    if (
+      !window.confirm(
+        'Clear the autosaved state and start over? Named saves are kept.',
+      )
+    ) {
       return
     }
 
@@ -146,6 +195,7 @@ requireElement<HTMLButtonElement>('#clear-storage').addEventListener(
     }
 
     publishPanel.reset()
+    savePanel.reset()
     modes[activeMode].update()
   },
 )

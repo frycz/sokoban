@@ -46,6 +46,15 @@ export type PublishPanel = {
     problems: readonly string[],
   ) => void
   readonly showError: (message: string) => void
+  readonly showMessage: (message: string, className: 'ok' | 'warning') => void
+  /**
+   * The name in the box and the directory Export would write it to — the
+   * directory only while the name is still the one it was opened or exported
+   * under, which is exactly when Export would use it.
+   */
+  readonly getHome: () => StoredPublish
+  /** Puts a saved name and directory back, for opening a save. */
+  readonly restore: (home: StoredPublish) => void
 }
 
 /**
@@ -227,6 +236,17 @@ export function createPublishPanel(
       }
     },
     showError: (message) => setMessage(message, 'error'),
+    showMessage: setMessage,
+    getHome: () => {
+      const name = nameInput.value.trim()
+
+      return { name, slug: home.name === name ? home.slug : null }
+    },
+    restore: (restored) => {
+      home = restored
+      storeHome()
+      nameInput.value = restored.name
+    },
   }
 }
 

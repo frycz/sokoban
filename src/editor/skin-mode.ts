@@ -31,7 +31,11 @@ import type { SkinExport } from './publish'
 import type { Session } from './session'
 import { readStoredText, writeStoredText } from './storage'
 import { createZoomControl } from './zoom'
-import { decodeStoredSkin, encodeStoredSkin } from './stored-state'
+import {
+  decodeStoredSkin,
+  encodeStoredSkin,
+  type StoredSkin,
+} from './stored-state'
 import { getAtlasSize, packSkinAtlas } from './skin/atlas'
 import {
   countPlacedTiles,
@@ -166,8 +170,13 @@ export type SkinMode = EditorMode & {
    * document's placements: they were opened with it, against this sheet.
    */
   readonly openSkin: (
-    skin: { readonly draft: SkinDraft; readonly sheetDataUrl: string } | null,
+    skin: {
+      readonly draft: SkinDraft
+      readonly sheetDataUrl: string | null
+    } | null,
   ) => Promise<void>
+  /** The skin as it stands, for a save to keep — the same two values autosave stores. */
+  readonly getStoredSkin: () => StoredSkin
 }
 
 /**
@@ -1123,13 +1132,18 @@ export function createSkinMode(
   }
 
   async function openSkin(
-    skin: { readonly draft: SkinDraft; readonly sheetDataUrl: string } | null,
+    skin: {
+      readonly draft: SkinDraft
+      readonly sheetDataUrl: string | null
+    } | null,
   ): Promise<void> {
     // Decoded before anything is replaced, so an atlas that does not read
     // leaves the panel as it was rather than half opened.
-    const image = skin
-      ? await readDataUrlAsImageBitmap(skin.sheetDataUrl)
-      : null
+    const openedDataUrl = skin?.sheetDataUrl ?? null
+    const image =
+      openedDataUrl !== null
+        ? await readDataUrlAsImageBitmap(openedDataUrl)
+        : null
 
     draft = skin?.draft ?? createEmptySkinDraft()
     sheetImage = image
@@ -2143,5 +2157,12 @@ export function createSkinMode(
     }
   }
 
-  return { update, reset, handleKey, getSkinExport, openSkin }
+  return {
+    update,
+    reset,
+    handleKey,
+    getSkinExport,
+    openSkin,
+    getStoredSkin: () => ({ draft, sheetDataUrl }),
+  }
 }

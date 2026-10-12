@@ -6,11 +6,19 @@
  * reported rather than thrown — the editor has to keep working unsaved.
  *
  * One key per owner — the three modes, the publish panel, the mode switcher and
- * skin mode's live link —
+ * skin mode's live link, and the saves panel's current save —
  * each written only by the one that owns that state, so none of them ever has to
  * coordinate a read-modify-write of a shared record.
  */
-const SLICES = ['level', 'skin', 'publish', 'palettes', 'mode', 'live'] as const
+const SLICES = [
+  'level',
+  'skin',
+  'publish',
+  'palettes',
+  'mode',
+  'live',
+  'save',
+] as const
 
 export type StoredSlice = (typeof SLICES)[number]
 
