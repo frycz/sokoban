@@ -740,15 +740,10 @@ A piece is named for where it sits in the wall **around** the floor. Floor to th
 Four will not do, and the reason is the shape the pieces exist for:
 
 ```
-
-##### The corners of a one-cell-thick border have no
-
-# # orthogonally adjacent floor — only diagonal. Four
-
-# # neighbours cannot tell a corner from a buried block.
-
+#####     The corners of a one-cell-thick border have no
+#   #     orthogonally adjacent floor — only diagonal. Four
+#   #     neighbours cannot tell a corner from a buried block.
 #####
-
 ```
 
 So `getWallRole` takes a `WallNeighbourhood` of eight booleans and resolves in that order of specificity: one open side is an edge, no open side but an open diagonal is a corner, nothing open at all is the fill.
@@ -762,13 +757,11 @@ The classifier lives in `render/` rather than the editor so the preview and the 
 ### Layer order, and what it asks of the art
 
 ```
-
-floor → every cell of the board, walls included
-wall → over floor
-goal → over floor
+floor  → every cell of the board, walls included
+wall   → over floor
+goal   → over floor
 object → box / boxOnGoal / player, over both
-
-````
+```
 
 Floor is one layer under the whole board rather than a tile that the others replace, so every other tile can be a transparent overlay _or_ an opaque tile of its own without the author having to redraw floor into it. What falls out is the one authoring rule: floor opaque, everything else free to use transparency.
 
@@ -808,7 +801,7 @@ Re-slicing drops every binding. A tile index only means something against one gr
   "pixelated": true,
   "roles": ["floor", "goal", "wall", "box", "boxOnGoal", "player"]
 }
-````
+```
 
 One row, `roles[n]` in column `n`, listing exactly the roles the image contains — an unbound role takes no column. Naming them in the file is what lets a six-tile skin and a fourteen-tile skin share one format with no version field, and what lets the set grow — more wall pieces, ice, conveyors — by appending to `ROLE_ORDER` and widening the image, with no breakage for skins already exported, because every skin describes itself.
 
