@@ -8,6 +8,7 @@ import {
 } from '../render/layers'
 import { createSkin, parseSkinManifest, type Skin } from '../render/skin'
 import { applyDefaultSkin, parseDefaultSkin } from './default-skin'
+import { applyDisabledLevels, parseDisabledLevels } from './disabled-levels'
 import { LEVEL } from './level-data'
 import { applyLevelOrder, parseLevelOrder } from './level-order'
 
@@ -39,7 +40,10 @@ export type PlayableLevel = {
 }
 
 export type LevelCatalog = {
+  /** Every level, disabled ones included, in `order.json` order. */
   readonly levels: readonly PlayableLevel[]
+  /** The slugs `disabled.json` leaves out of the campaign. */
+  readonly disabled: readonly string[]
   /** The level `default-skin.json` lends a skin from, or null for none. */
   readonly defaultSkin: string | null
   /** Bundles that could not be loaded, said out loud rather than hidden. */
@@ -83,6 +87,12 @@ const layerRecords = import.meta.glob<unknown>('/levels/*/tiles.json', {
 
 /** A glob of one file, so a checkout without `order.json` still builds. */
 const orderRecords = import.meta.glob<unknown>('/levels/order.json', {
+  import: 'default',
+  eager: true,
+})
+
+/** A glob of one file, so a checkout without `disabled.json` still builds. */
+const disabledRecords = import.meta.glob<unknown>('/levels/disabled.json', {
   import: 'default',
   eager: true,
 })
@@ -172,7 +182,7 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
       problems.push(builtIn.message)
     }
 
-    return { levels, defaultSkin: null, problems }
+    return { levels, disabled: [], defaultSkin: null, problems }
   }
 
   const orderRecord = orderRecords['/levels/order.json']
@@ -185,6 +195,18 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
   }
 
   const ordered = applyLevelOrder(levels, order ?? [])
+
+  const disabledRecord = disabledRecords['/levels/disabled.json']
+  const listedDisabled =
+    disabledRecord === undefined ? [] : parseDisabledLevels(disabledRecord)
+
+  if (!listedDisabled) {
+    problems.push(
+      'disabled.json: is not a list of level slugs, so no level is disabled.',
+    )
+  }
+
+  const disabled = applyDisabledLevels(levels, listedDisabled ?? [])
 
   const defaultSkinRecord = defaultSkinRecords['/levels/default-skin.json']
   const defaultSkin =
@@ -200,8 +222,14 @@ export async function loadLevelCatalog(): Promise<LevelCatalog> {
 
   return {
     levels: skinned.levels,
+    disabled: disabled.disabled,
     defaultSkin: defaultSkin ?? null,
-    problems: [...problems, ...ordered.problems, ...skinned.problems],
+    problems: [
+      ...problems,
+      ...ordered.problems,
+      ...disabled.problems,
+      ...skinned.problems,
+    ],
   }
 }
 

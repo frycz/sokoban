@@ -4,7 +4,8 @@ import type { PlayableLevel } from './levels'
 import type { MenuItem } from './menu'
 
 /**
- * The dev build's extras: every level at once, reordering the campaign, choosing
+ * The dev build's extras: every level at once, reordering the campaign,
+ * disabling and deleting levels, choosing
  * the skin levels without one borrow, playing it from any level, and solving a
  * level on demand. Loaded only by
  * `npm run dev` — `index.ts` imports this behind a constant the build folds to
@@ -13,15 +14,22 @@ import type { MenuItem } from './menu'
 
 /** What the dev tools may do to the game. */
 export type GameControls = {
+  /** Every level, disabled ones included. */
   readonly levels: () => readonly PlayableLevel[]
-  readonly setLevels: (ordered: readonly PlayableLevel[]) => void
+  /** The slugs left out of the campaign. */
+  readonly disabled: () => ReadonlySet<string>
+  readonly setLevels: (
+    ordered: readonly PlayableLevel[],
+    disabled: Iterable<string>,
+  ) => void
   /** The level `default-skin.json` named when the game loaded, or null. */
   readonly defaultSkin: string | null
   readonly problems: readonly string[]
   readonly addScreen: (screen: HTMLElement) => void
   readonly showScreen: (screen: HTMLElement) => void
   readonly showTitle: () => void
-  readonly startCampaignAt: (index: number) => void
+  /** A fresh run from the level, which must not be disabled. */
+  readonly startCampaignAt: (slug: string) => void
   readonly winLevel: () => void
   /** Where the dev build puts its buttons under the board. */
   readonly gameFooter: HTMLElement
@@ -29,12 +37,21 @@ export type GameControls = {
 
 export type DevTools = {
   readonly titleItems: readonly MenuItem[]
+  /**
+   * Back on the levels screen when a level deleted there reloaded the page,
+   * returning whether it was.
+   */
+  readonly resume: () => boolean
   /** A key on the board meant for the dev tools, returning whether it was. */
   readonly handleGameKey: (event: KeyboardEvent) => boolean
 }
 
 const ORDER_ENDPOINT = '/api/level-order'
 const DEFAULT_SKIN_ENDPOINT = '/api/default-skin'
+const DISABLED_ENDPOINT = '/api/disabled-levels'
+const DELETE_ENDPOINT = '/api/delete-level'
+/** Set before a delete, because removing a level's files reloads the page. */
+const REOPEN_KEY = 'sokoban:dev:reopen-levels'
 const WIN_KEY = 'n'
 
 const STYLES = `
@@ -110,6 +127,10 @@ const STYLES = `
   .dev-card:hover {
     border-color: #4b5570;
   }
+  .dev-card.disabled canvas,
+  .dev-card.disabled .name {
+    opacity: 0.35;
+  }
   .dev-card.dragging {
     opacity: 0.4;
   }
@@ -159,6 +180,10 @@ const STYLES = `
     color: var(--text);
     border-color: var(--accent);
   }
+  .dev-button.danger:hover:not(:disabled) {
+    color: #ff8a8a;
+    border-color: #ff8a8a;
+  }
   .dev-button:disabled {
     opacity: 0.35;
     cursor: default;
@@ -174,6 +199,8 @@ const STYLES = `
 type Card = {
   readonly element: HTMLElement
   readonly number: HTMLElement
+  readonly play: HTMLButtonElement
+  readonly toggle: HTMLButtonElement
   readonly up: HTMLButtonElement
   readonly down: HTMLButtonElement
   readonly repaint: () => void
@@ -238,14 +265,18 @@ export function createDevTools(game: GameControls): DevTools {
     const actions = document.createElement('div')
     actions.className = 'actions'
     const play = createButton('Play from here', () =>
-      game.startCampaignAt(indexOf(level.slug)),
+      game.startCampaignAt(level.slug),
     )
     play.classList.add('play')
+    const toggle = createButton('', () => toggleDisabled(level.slug))
     const up = createButton('↑', () => move(level.slug, -1))
     up.title = 'Earlier'
     const down = createButton('↓', () => move(level.slug, 1))
     down.title = 'Later'
-    actions.append(play, up, down)
+    const remove = createButton('✕', () => void deleteLevel(level))
+    remove.title = 'Delete'
+    remove.classList.add('danger')
+    actions.append(play, toggle, up, down, remove)
 
     element.append(miniature, title, meta, actions)
 
@@ -283,6 +314,8 @@ export function createDevTools(game: GameControls): DevTools {
     return {
       element,
       number,
+      play,
+      toggle,
       up,
       down,
       repaint: () => paint(level.levelState),
@@ -318,19 +351,32 @@ export function createDevTools(game: GameControls): DevTools {
 
     const [level] = levels.splice(from, 1)
     levels.splice(target, 0, level)
-    game.setLevels(levels)
+    game.setLevels(levels, game.disabled())
     renderList()
     void saveOrder(levels)
   }
 
-  /** Re-appends the cached cards in campaign order; nothing is rebuilt. */
+  /**
+   * Re-appends the cached cards in campaign order; nothing is rebuilt. A
+   * disabled level keeps its place but not a number, since the campaign skips
+   * it.
+   */
   function renderList(): void {
     const levels = game.levels()
+    const disabled = game.disabled()
+    let number = 0
 
     list.replaceChildren(
       ...levels.map((level, index) => {
         const card = cardFor(level)
-        card.number.textContent = `${index + 1}. `
+        const isDisabled = disabled.has(level.slug)
+        card.element.classList.toggle('disabled', isDisabled)
+        card.number.textContent = isDisabled ? '– ' : `${++number}. `
+        card.play.disabled = isDisabled
+        card.toggle.textContent = isDisabled ? 'Enable' : 'Disable'
+        card.toggle.title = isDisabled
+          ? 'Back into the campaign'
+          : 'Leave out of the campaign'
         card.up.disabled = index === 0
         card.down.disabled = index === levels.length - 1
 
@@ -376,6 +422,112 @@ export function createDevTools(game: GameControls): DevTools {
   }
 
   /**
+   * Applied at once and written after, like the order. The last level in the
+   * campaign stays, or there would be nothing to play.
+   */
+  function toggleDisabled(slug: string): void {
+    const disabled = new Set(game.disabled())
+
+    if (disabled.has(slug)) {
+      disabled.delete(slug)
+    } else if (disabled.size + 1 >= game.levels().length) {
+      setReport('Not disabled: the campaign needs at least one level.')
+
+      return
+    } else {
+      disabled.add(slug)
+    }
+
+    const levels = game.levels()
+    const listed = levels
+      .map((level) => level.slug)
+      .filter((levelSlug) => disabled.has(levelSlug))
+
+    game.setLevels(levels, listed)
+    renderList()
+    void saveDisabled(listed)
+  }
+
+  async function saveDisabled(slugs: readonly string[]): Promise<void> {
+    try {
+      const response = await fetch(DISABLED_ENDPOINT, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(slugs),
+      })
+      const answer = (await response.json()) as {
+        message?: string
+        file?: string
+      }
+
+      setReport(
+        response.ok
+          ? `Saved to ${answer.file ?? 'levels/disabled.json'}.`
+          : `Not saved: ${answer.message ?? response.statusText}`,
+      )
+    } catch (error) {
+      setReport(
+        `Not saved: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
+
+  /**
+   * Removed from the screen only once the files are gone. Removing them
+   * reloads the page, so the screen is marked to open again after it.
+   */
+  async function deleteLevel(level: PlayableLevel): Promise<void> {
+    if (game.levels().length === 1) {
+      setReport('Not deleted: it is the only level.')
+
+      return
+    }
+
+    if (
+      !window.confirm(
+        `Delete "${level.name}"? This removes levels/${level.slug}/ from disk.`,
+      )
+    ) {
+      return
+    }
+
+    try {
+      writeReopen(true)
+      const response = await fetch(DELETE_ENDPOINT, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slug: level.slug }),
+      })
+      const answer = (await response.json()) as {
+        message?: string
+        directory?: string
+      }
+
+      if (!response.ok) {
+        writeReopen(false)
+        setReport(`Not deleted: ${answer.message ?? response.statusText}`)
+
+        return
+      }
+
+      const disabled = new Set(game.disabled())
+      disabled.delete(level.slug)
+      game.setLevels(
+        game.levels().filter((other) => other.slug !== level.slug),
+        disabled,
+      )
+      cards.delete(level.slug)
+      renderList()
+      setReport(`Deleted ${answer.directory ?? `levels/${level.slug}`}.`)
+    } catch (error) {
+      writeReopen(false)
+      setReport(
+        `Not deleted: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
+
+  /**
    * Every level that shipped a skin can lend it. Rebuilt on each visit, so the
    * list follows the campaign order.
    */
@@ -415,7 +567,10 @@ export function createDevTools(game: GameControls): DevTools {
       }
 
       defaultSkin = from
-      game.setLevels(applyDefaultSkin(game.levels(), from).levels)
+      game.setLevels(
+        applyDefaultSkin(game.levels(), from).levels,
+        game.disabled(),
+      )
       cards.clear()
       renderList()
       repaintAll()
@@ -473,6 +628,16 @@ export function createDevTools(game: GameControls): DevTools {
 
   return {
     titleItems: [{ label: 'Levels (dev)', action: showLevels }],
+    resume: () => {
+      if (!readReopen()) {
+        return false
+      }
+
+      writeReopen(false)
+      showLevels()
+
+      return true
+    },
     handleGameKey: (event) => {
       if (event.key.toLowerCase() !== WIN_KEY) {
         return false
@@ -499,12 +664,32 @@ function createLevelsScreen(): HTMLElement {
         <button type="button" class="dev-button" id="dev-levels-back">Title (Esc)</button>
       </div>
     </header>
-    <p class="hint">Drag a card, or use ↑ ↓, to reorder the campaign — saved to levels/order.json as you go. Default skin is what levels without a skin of their own are drawn with — saved to levels/default-skin.json. Play from here starts a fresh run at that level.</p>
+    <p class="hint">Drag a card, or use ↑ ↓, to reorder the campaign — saved to levels/order.json as you go. Disable leaves a level out of the campaign — saved to levels/disabled.json. ✕ deletes the level's directory from levels/. Default skin is what levels without a skin of their own are drawn with — saved to levels/default-skin.json. Play from here starts a fresh run at that level.</p>
     <div id="dev-level-list"></div>
     <p id="dev-levels-report"></p>
   `
 
   return screen
+}
+
+function readReopen(): boolean {
+  try {
+    return sessionStorage.getItem(REOPEN_KEY) !== null
+  } catch {
+    return false
+  }
+}
+
+function writeReopen(reopen: boolean): void {
+  try {
+    if (reopen) {
+      sessionStorage.setItem(REOPEN_KEY, '1')
+    } else {
+      sessionStorage.removeItem(REOPEN_KEY)
+    }
+  } catch {
+    // Without storage the page comes back on the title instead.
+  }
 }
 
 function createButton(label: string, action: () => void): HTMLButtonElement {

@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import { defaultSkinPlugin } from './tools/default-skin-plugin'
 import { levelExportPlugin } from './tools/level-export-plugin'
+import { levelManagePlugin } from './tools/level-manage-plugin'
 import { levelOrderPlugin } from './tools/level-order-plugin'
 import { liveColorsPlugin } from './tools/live-colors-plugin'
 
@@ -18,10 +19,12 @@ export default defineConfig(({ mode }) => {
     // the editor runs on the same config, just a different port and entry.
     // The live link from the colour picker is serve-only for the same reason,
     // and so is the dev build's level reordering, which writes order.json, and
-    // its default skin picker, which writes default-skin.json.
+    // its default skin picker, which writes default-skin.json, and its
+    // disabling and deleting of levels, which write disabled.json and levels/.
     plugins: [
       levelExportPlugin(),
       levelOrderPlugin(),
+      levelManagePlugin(),
       defaultSkinPlugin(),
       liveColorsPlugin(),
     ],

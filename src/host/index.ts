@@ -124,7 +124,11 @@ type Play = {
   readonly replay: boolean
 }
 
-/** The campaign, in `levels/order.json` order. */
+/** Every level in `levels/`, disabled ones included, in `order.json` order. */
+let allLevels: readonly PlayableLevel[] = []
+/** The slugs `levels/disabled.json` leaves out of the campaign. */
+let disabledSlugs: ReadonlySet<string> = new Set()
+/** The campaign: every level that is not disabled, in `order.json` order. */
 let levels: readonly PlayableLevel[] = []
 let save: Save = { current: null, completed: [] }
 
@@ -875,19 +879,27 @@ window.setInterval(() => {
 
 let devTools: DevTools | null = null
 
+function setLevels(
+  ordered: readonly PlayableLevel[],
+  disabled: Iterable<string>,
+): void {
+  allLevels = ordered
+  disabledSlugs = new Set(disabled)
+  levels = ordered.filter((level) => !disabledSlugs.has(level.slug))
+}
+
 async function start(): Promise<void> {
   const catalog = await loadLevelCatalog()
-  levels = catalog.levels
+  setLevels(catalog.levels, catalog.disabled)
   save = readStoredSave(SAVE_KEY) ?? save
 
   if (IS_DEV_BUILD) {
     const { createDevTools } = await import('./dev-tools')
 
     devTools = createDevTools({
-      levels: () => levels,
-      setLevels: (ordered) => {
-        levels = ordered
-      },
+      levels: () => allLevels,
+      disabled: () => disabledSlugs,
+      setLevels,
       defaultSkin: catalog.defaultSkin,
       problems: catalog.problems,
       addScreen: (screen) => {
@@ -900,7 +912,13 @@ async function start(): Promise<void> {
         showScreen(screen)
       },
       showTitle,
-      startCampaignAt,
+      startCampaignAt: (slug) => {
+        const index = levels.findIndex((level) => level.slug === slug)
+
+        if (index !== -1) {
+          startCampaignAt(index)
+        }
+      },
       winLevel: completeLevel,
       gameFooter,
     })
@@ -911,6 +929,10 @@ async function start(): Promise<void> {
   }
 
   transitionView(() => {
+    if (devTools?.resume()) {
+      return
+    }
+
     showTitle()
     // Only this first time: the menu's items rise in where the loader was.
     titleMenuSlot.querySelector('.menu')?.classList.add('entering')
