@@ -29,7 +29,7 @@ import { readSwatchClick, renderSwatches, type SwatchAction } from './swatches'
 import { computeGridLayout, getPositionAtPixel } from './layout'
 import type { SkinExport } from './publish'
 import type { Session, UndoSlice } from './session'
-import { pushRecent } from './recent'
+import { decodeStoredRecent, encodeStoredRecent, pushRecent } from './recent'
 import { readStoredText, writeStoredText } from './storage'
 import { createZoomControl } from './zoom'
 import {
@@ -303,16 +303,24 @@ export function createSkinMode(
   // cell for a placement — so the picker itself has nothing to remember.
   let ink: Tint = NO_TINT
   let showSkinTiles = true
-  // The last tiles and colours put to use, newest first. View state like the
-  // ink: a shortcut back to them, nothing the skin or the level keeps. The tiles
-  // are indices, so they remember the sheet and slicing they were picked
-  // against and are dropped once either changes.
-  let recentTiles: readonly number[] = []
+  // The last tiles and colours put to use, newest first. Not part of the skin
+  // or the level — a save does not carry them — but autosaved in a slice of
+  // their own so a reload keeps them. The tiles are indices, so they remember
+  // the sheet and slicing they were picked against and are dropped once either
+  // changes. The sheet is told apart by its data url, which unlike the decoded
+  // image is the same string after a reload.
+  const storedRecent = decodeStoredRecent(readStoredText('recent'))
+  let recentTiles: readonly number[] = storedRecent?.tiles ?? []
   let recentTilesSheet: {
-    readonly image: ImageBitmap | null
+    readonly dataUrl: string | null
     readonly settings: SheetSettings
-  } = { image: null, settings: draft.sheet }
-  let recentColors: readonly string[] = []
+  } = {
+    dataUrl: sheetDataUrl,
+    settings: storedRecent?.sheet ?? draft.sheet,
+  }
+  let recentColors: readonly string[] = storedRecent?.colors ?? []
+  let savedRecentTiles = recentTiles
+  let savedRecentColors = recentColors
   let hoverPosition = -1
   let isPlacing = false
   // Whether the ground picker is mid-visit. A colour input fires `input` for
@@ -1029,14 +1037,35 @@ export function createSkinMode(
   /** Drops the recent tiles when the sheet they index is no longer the one loaded. */
   function syncRecentTilesSheet(): void {
     if (
-      recentTilesSheet.image === sheetImage &&
+      recentTilesSheet.dataUrl === sheetDataUrl &&
       isSameSlicing(recentTilesSheet.settings, draft.sheet)
     ) {
       return
     }
 
     recentTiles = []
-    recentTilesSheet = { image: sheetImage, settings: draft.sheet }
+    recentTilesSheet = { dataUrl: sheetDataUrl, settings: draft.sheet }
+  }
+
+  /** Written only when a list changed, which identity tells exactly. */
+  function persistRecent(): void {
+    if (
+      recentTiles === savedRecentTiles &&
+      recentColors === savedRecentColors
+    ) {
+      return
+    }
+
+    savedRecentTiles = recentTiles
+    savedRecentColors = recentColors
+    writeStoredText(
+      'recent',
+      encodeStoredRecent({
+        colors: recentColors,
+        tiles: recentTiles,
+        sheet: recentTilesSheet.settings,
+      }),
+    )
   }
 
   function noteTileUsed(tileIndex: number): void {
@@ -1109,6 +1138,7 @@ export function createSkinMode(
       selectedIndex: -1,
       emptyMessage: 'No colours used yet.',
     })
+    persistRecent()
   }
 
   function copyHex(color: string): void {
@@ -1287,6 +1317,10 @@ export function createSkinMode(
     soloLayerId = null
     ink = NO_TINT
     recentColors = []
+    recentTiles = []
+    recentTilesSheet = { dataUrl: null, settings: draft.sheet }
+    savedRecentTiles = recentTiles
+    savedRecentColors = recentColors
     selectedPaletteId = null
     paletteNote = null
     showSkinTiles = true
