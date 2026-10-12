@@ -37,10 +37,9 @@ type PiecePoint = (position: number) => Point
  * The largest a cell is ever drawn, in CSS pixels. Without a cap the board
  * always fills the canvas, so a small level got huge tiles and a big one small
  * tiles; with it every level that fits plays at the same scale, and only a
- * board too big for the screen shrinks. 48 is a whole multiple of a 16px skin,
- * so pixel art stays square at full size.
+ * board too big for the screen shrinks.
  */
-const MAX_TILE_PX = 48
+const MAX_TILE_PX = 40
 
 type BoardLayout = {
   readonly tile: number
